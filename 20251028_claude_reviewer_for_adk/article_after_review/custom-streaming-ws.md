@@ -232,9 +232,10 @@ async def start_agent_session(user_id, is_audio=False):
     """Starts an agent session"""
 
     # Create a Runner
-    runner = InMemoryRunner(
+    runner = Runner(
         app_name=APP_NAME,
         agent=root_agent,
+        session_service=session_service,
     )
 
     # Create a Session
@@ -273,8 +274,8 @@ This function initializes an ADK agent live session.
 | `is_audio`   | `bool`  | `True` for audio responses, `False` for text (default). |
 
 **Key Steps:**
-1\.  **Create Runner:** Instantiates the ADK runner for the `root_agent`.
-2\.  **Create Session:** Establishes an ADK session.
+1\.  **Create Runner:** Instantiates the ADK runner for the `root_agent` with the `session_service`.
+2\.  **Create Session:** Establishes an ADK session using the runner's session service.
 3\.  **Set Response Modality:** Configures agent response as "AUDIO" or "TEXT".
 4\.  **Create LiveRequestQueue:** Creates a queue for client inputs to the agent.
 5\.  **Start Agent Session:** `runner.run_live(...)` starts the agent, returning:
