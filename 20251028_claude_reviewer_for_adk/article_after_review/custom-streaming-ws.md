@@ -11,7 +11,7 @@ In order to use voice/video streaming in ADK, you will need to use Gemini models
 - [Google AI Studio: Gemini Live API](https://ai.google.dev/gemini-api/docs/models#live-api)
 - [Vertex AI: Gemini Live API](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api)
 
-There is also a [SSE](custom-streaming.md) version of the sample is available.
+> **Learn More:** An [SSE (Server-Sent Events) version](custom-streaming.md) of this sample is also available.
 
 ## 1. Install ADK {#1.-setup-installation}
 
