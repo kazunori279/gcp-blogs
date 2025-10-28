@@ -286,13 +286,11 @@ This function initializes an ADK agent live session. It uses `APP_NAME` and `ses
 | `is_audio` | `bool` | `True` for audio responses, `False` for text (default). |
 
 **Key Steps:**
-1\.  **Create Runner:** Instantiates the ADK runner for the `root_agent` with the `session_service`.
-2\.  **Create Session:** Establishes an ADK session using the runner's session service.
-3\.  **Set Response Modality:** Configures agent response as "AUDIO" or "TEXT".
-4\.  **Create LiveRequestQueue:** Creates a queue for client inputs to the agent.
-5\.  **Start Agent Session:** `runner.run_live(...)` starts the agent, returning:
-    *   `live_events`: Asynchronous iterable for agent events (text, audio, completion).
-    *   `live_request_queue`: Queue to send data to the agent.
+1.  **Create Runner:** Instantiates the ADK runner for the `root_agent` with the `session_service`.
+2.  **Create Session:** Establishes an ADK session using the runner's session service.
+3.  **Set Response Modality:** Configures agent response as "AUDIO" or "TEXT".
+4.  **Create LiveRequestQueue:** Creates a queue for client inputs to the agent.
+5.  **Start Agent Session:** `runner.run_live(...)` starts the agent, returning `live_events` (asynchronous iterable for agent events) and `live_request_queue` (queue to send data to the agent).
 
 **Returns:** `(live_events, live_request_queue)`.
 
