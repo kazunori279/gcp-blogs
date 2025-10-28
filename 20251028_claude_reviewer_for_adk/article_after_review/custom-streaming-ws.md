@@ -1,6 +1,6 @@
 # Custom Audio Streaming Application (WebSocket) {#custom-streaming-websocket}
 
-This article overviews the server and client code for a custom asynchronous web application built with ADK Streaming and [FastAPI](https://fastapi.tiangolo.com/), enabling real-time, bidirectional audio and text communication with WebSockets.
+This article overviews the server and client code for a custom Bidi-streaming web application built with ADK Bidi-streaming and [FastAPI](https://fastapi.tiangolo.com/), enabling real-time, bidirectional audio and text communication with WebSockets.
 
 **Note:** This guide assumes you have experience of JavaScript and Python `asyncio` programming.
 
@@ -120,7 +120,12 @@ root_agent = Agent(
 )
 ```
 
-**Note:**  To enable both text and audio/video input, the model must support the generateContent (for text) and bidiGenerateContent methods. Verify these capabilities by referring to the [List Models Documentation](https://ai.google.dev/api/models#method:-models.list). This quickstart utilizes the gemini-2.0-flash-exp model for demonstration purposes.
+**Note:** This application uses the Gemini Live API (also known as `bidiGenerateContent`), which enables real-time bidirectional streaming for both text and audio/video input. The model must support the Live API for Bidi-streaming to work. Verify model capabilities by referring to:
+
+- [Gemini Live API - Supported Models](https://ai.google.dev/gemini-api/docs/live#supported-models)
+- [Vertex AI Live API - Model Support](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api#models)
+
+This quickstart utilizes the `gemini-2.0-flash-exp` model for demonstration purposes, which supports Live API functionality.
 
 Notice how easily you integrated [grounding with Google Search](https://ai.google.dev/gemini-api/docs/grounding?lang=python#configure-search) capabilities.  The `Agent` class and the `google_search` tool handle the complex interactions with the LLM and grounding with the search API, allowing you to focus on the agent's *purpose* and *behavior*.
 
@@ -294,12 +299,21 @@ async def start_agent_session(user_id, is_audio=False):
         session_service=session_service,
     )
 
-    session = await runner.session_service.create_session(
+    # Get or create session (recommended pattern for production)
+    session = await runner.session_service.get_session(
         app_name=APP_NAME,
-        user_id=user_id,  # Replace with actual user ID
+        user_id=user_id,
     )
+    if not session:
+        session = await runner.session_service.create_session(
+            app_name=APP_NAME,
+            user_id=user_id,
+        )
 
     # Configure response format based on client preference
+    # IMPORTANT: You must choose exactly ONE modality per session
+    # Either ["TEXT"] for text responses OR ["AUDIO"] for voice responses
+    # You cannot use both modalities simultaneously in the same session
     modality = "AUDIO" if is_audio else "TEXT"
     run_config = RunConfig(response_modalities=[modality])
 
@@ -309,6 +323,8 @@ async def start_agent_session(user_id, is_audio=False):
     #     session_resumption=types.SessionResumptionConfig()
     # )
 
+    # Create LiveRequestQueue in async context (recommended best practice)
+    # This ensures the queue uses the correct event loop
     live_request_queue = LiveRequestQueue()
 
     # Start streaming session - returns async iterator for agent responses
@@ -337,7 +353,7 @@ This function initializes an ADK agent live session. It uses `APP_NAME` and `ses
 
 **Returns:** `(live_events, live_request_queue)`.
 
-**Note on Runner Lifecycle:** In this example, we create a new `Runner` instance for each WebSocket connection for simplicity and ease of understanding. In production environments, you should create the runner once at application startup and reuse it for all connections to improve performance and resource utilization. See the production considerations section at the end of this article for implementation details.
+**Note on Runner Lifecycle:** In this example, we create a new `Runner` instance for each WebSocket connection for simplicity and ease of understanding. **In production environments, you should create the runner once at application startup and reuse it for all connections** to improve performance and resource utilization. This is the recommended pattern from the ADK documentation. See the [Next steps for production](#next-steps-for-production) section at the end of this article for the production-ready implementation pattern.
 
 #### Session Resumption Configuration (Optional Enhancement)
 
@@ -461,10 +477,14 @@ async def client_to_agent_messaging(websocket, live_request_queue):
             data = message["data"]
 
             if mime_type == "text/plain":
+                # send_content() sends text in "turn-by-turn mode"
+                # This signals a complete turn to the model, triggering immediate response
                 content = Content(role="user", parts=[Part.from_text(text=data)])
                 live_request_queue.send_content(content=content)
                 print(f"[CLIENT TO AGENT]: {data}")
             elif mime_type == "audio/pcm":
+                # send_realtime() sends audio in "realtime mode"
+                # Data flows continuously without turn boundaries, enabling natural conversation
                 # Audio is Base64-encoded for JSON transport, decode before sending
                 decoded_data = base64.b64decode(data)
                 live_request_queue.send_realtime(Blob(data=decoded_data, mime_type=mime_type))
@@ -522,7 +542,12 @@ async def root():
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: int, is_audio: str):
-    """Client websocket endpoint"""
+    """Client websocket endpoint
+
+    This async function creates the LiveRequestQueue in an async context,
+    which is the recommended best practice from the ADK documentation.
+    This ensures the queue uses the correct event loop.
+    """
 
     await websocket.accept()
     print(f"Client #{user_id} connected, audio mode: {is_audio}")
@@ -824,9 +849,9 @@ The client-side JavaScript code manages a WebSocket connection, which can be re-
 
 ### Next steps for production
 
-When you will use the Streaming for ADK in production apps, you may want to consinder the following points:
+When you will use ADK Bidi-streaming in production apps, you should consider the following critical optimizations and best practices. These recommendations come from the [ADK Bidi-streaming Guide](https://github.com/google/adk-python/tree/main/docs/streaming-guide) and production deployment experience.
 
-*   **Optimize Runner Lifecycle:** Create the `Runner` instance once at application startup instead of per-connection. This significantly improves performance and resource utilization.
+*   **Optimize Runner Lifecycle (Critical):** Create the `Runner` instance once at application startup instead of per-connection. This significantly improves performance and resource utilization. This is the **recommended pattern** from the ADK documentation.
 
     ```python
     # Create runner once at module level (before FastAPI app initialization)
@@ -839,13 +864,19 @@ When you will use the Streaming for ADK in production apps, you may want to cons
     async def start_agent_session(user_id, is_audio=False):
         """Starts an agent session using the global runner"""
 
-        # Create a Session (reusing the global runner)
-        session = await runner.session_service.create_session(
+        # Get or create session (recommended pattern for production)
+        session = await runner.session_service.get_session(
             app_name=APP_NAME,
             user_id=user_id,
         )
+        if not session:
+            session = await runner.session_service.create_session(
+                app_name=APP_NAME,
+                user_id=user_id,
+            )
 
         # Configure response format based on client preference
+        # Must choose exactly ONE modality - either ["TEXT"] or ["AUDIO"]
         modality = "AUDIO" if is_audio else "TEXT"
         run_config = RunConfig(response_modalities=[modality])
 
@@ -867,3 +898,19 @@ When you will use the Streaming for ADK in production apps, you may want to cons
 *   **Externalize Session State:** Replace the `InMemorySessionService` for ADK with a distributed, persistent session store. This allows any server instance to handle any user's session, enabling true statelessness at the server level and improving fault tolerance.
 *   **Implement Health Checks:** Set up robust health checks for your WebSocket server instances so the load balancer can automatically remove unhealthy instances from rotation.
 *   **Utilize Orchestration:** Consider using an orchestration platform like Kubernetes for automated deployment, scaling, self-healing, and management of your WebSocket server instances.
+
+### Additional Resources
+
+For comprehensive guidance on ADK Bidi-streaming best practices, architecture patterns, and advanced features, refer to:
+
+- **[ADK Bidi-streaming Guide](https://github.com/google/adk-python/tree/main/docs/streaming-guide)**: Official guide covering LiveRequestQueue, event handling, RunConfig, and audio/video streaming
+- **[ADK Documentation](https://google.github.io/adk-docs/)**: Complete ADK documentation including agents, tools, and session management
+- **[Gemini Live API Documentation](https://ai.google.dev/gemini-api/docs/live)**: Live API reference for Google AI Studio
+- **[Vertex AI Live API Documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api)**: Live API reference for Google Cloud Vertex AI
+
+These resources provide detailed explanations of:
+
+- **Phase-based lifecycle patterns** for streaming applications (initialization, session management, active streaming, termination)
+- **Event handling patterns** including partial/complete text, interruptions, and turn completion signals
+- **Advanced features** like session resumption, voice activity detection, audio transcription, and context window compression
+- **Production deployment strategies** including load balancing, stateless session management, and health checks
