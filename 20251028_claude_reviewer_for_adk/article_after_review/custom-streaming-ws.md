@@ -279,10 +279,10 @@ async def start_agent_session(user_id, is_audio=False):
 
 This function initializes an ADK agent live session.
 
-| Parameter    | Type    | Description                                             |
-|--------------|---------|---------------------------------------------------------|
-| `user_id` | `str`   | Unique client identifier.                       |
-| `is_audio`   | `bool`  | `True` for audio responses, `False` for text (default). |
+| **Parameter** | **Type** | **Description** |
+|---|---|---|
+| `user_id` | `str` | Unique client identifier. |
+| `is_audio` | `bool` | `True` for audio responses, `False` for text (default). |
 
 **Key Steps:**
 1\.  **Create Runner:** Instantiates the ADK runner for the `root_agent` with the `session_service`.
