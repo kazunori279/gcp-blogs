@@ -1,6 +1,6 @@
-# Custom Audio Streaming app (WebSocket) {#custom-streaming-websocket}
+# Custom Audio Streaming Application (WebSocket) {#custom-streaming-websocket}
 
-This article overviews the server and client code for a custom asynchronous web app built with ADK Streaming and [FastAPI](https://fastapi.tiangolo.com/), enabling real-time, bidirectional audio and text communication with WebSockets.
+This article overviews the server and client code for a custom asynchronous web application built with ADK Streaming and [FastAPI](https://fastapi.tiangolo.com/), enabling real-time, bidirectional audio and text communication with WebSockets.
 
 **Note:** This guide assumes you have experience of JavaScript and Python `asyncio` programming.
 
@@ -125,7 +125,7 @@ Notice how easily you integrated [grounding with Google Search](https://ai.googl
 
 ![intro_components.png](../assets/quickstart-streaming-tool.png)
 
-## 3\. Interact with Your Streaming app {#3.-interact-with-your-streaming-app}
+## 3\. Interact with Your Streaming Application {#3.-interact-with-your-streaming-app}
 
 1\. **Navigate to the Correct Directory:**
 
@@ -182,7 +182,7 @@ These console logs are important in case you develop your own streaming applicat
 
 ## 4. Server code overview {#4.-server-side-code-overview}
 
-This server app enables real-time, streaming interaction with ADK agent via WebSockets. Clients send text/audio to the ADK agent and receive streamed text/audio responses.
+This server application enables real-time, streaming interaction with an ADK agent via WebSockets. Clients send text/audio to the ADK agent and receive streamed text/audio responses.
 
 Core functions:
 1.  Initialize/manage ADK agent sessions.
@@ -497,14 +497,14 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int, is_audio: str):
 
 ## 5. Client code overview {#5.-client-side-code-overview}
 
-The JavaScript `app.js` (in `app/static/js`) manages client-side interaction with the ADK Streaming WebSocket backend. It handles sending text/audio and receiving/displaying streamed responses.
+The JavaScript `app.js` (in `app/static/js`) manages client-side interaction with the ADK Streaming WebSocket server. It handles sending text/audio and receiving/displaying streamed responses.
 
 Key functionalities:
 1.  Manage WebSocket connection.
 2.  Handle text input.
 3.  Capture microphone audio (Web Audio API, AudioWorklets).
-4.  Send text/audio to backend.
-5.  Receive and render text/audio agent responses.
+4.  Send text/audio to server.
+5.  Receive and render text/audio responses from the ADK agent.
 6.  Manage UI.
 
 ### Prerequisites
@@ -743,9 +743,9 @@ function arrayBufferToBase64(buffer) {
 
 ## Summary
 
-This article overviews the server and client code for a custom asynchronous web app built with ADK Streaming and FastAPI, enabling real-time, bidirectional voice and text communication.
+This article overviews the server and client code for a custom asynchronous web application built with ADK Streaming and FastAPI, enabling real-time, bidirectional voice and text communication.
 
-The Python FastAPI server code initializes ADK agent sessions, configured for text or audio responses. It uses a WebSocket endpoint to handle client connections. Asynchronous tasks manage bidirectional messaging: forwarding client text or Base64-encoded PCM audio to the ADK agent, and streaming text or Base64-encoded PCM audio responses from the agent back to the client.
+The Python FastAPI server code initializes ADK agent sessions, configured for text or audio responses. It uses a WebSocket endpoint to handle client connections. Asynchronous tasks manage bidirectional messaging: forwarding client text or Base64-encoded PCM audio to the ADK agent, and streaming text or Base64-encoded PCM audio responses from the ADK agent back to the client.
 
 The client-side JavaScript code manages a WebSocket connection, which can be re-established to switch between text and audio modes. It sends user input (text or microphone audio captured via Web Audio API and AudioWorklets) to the server. Incoming messages from the server are processed: text is displayed (streamed), and Base64-encoded PCM audio is decoded and played using an AudioWorklet.
 
@@ -755,7 +755,7 @@ When you will use the Streaming for ADK in production apps, you may want to cons
 
 *   **Deploy Multiple Instances:** Run several instances of your FastAPI application instead of a single one.
 *   **Implement Load Balancing:** Place a load balancer in front of your application instances to distribute incoming WebSocket connections.
-    *   **Configure for WebSockets:** Ensure the load balancer supports long-lived WebSocket connections and consider "sticky sessions" (session affinity) to route a client to the same backend instance, *or* design for stateless instances (see next point).
-*   **Externalize Session State:** Replace the `InMemorySessionService` for ADK with a distributed, persistent session store. This allows any server instance to handle any user's session, enabling true statelessness at the application server level and improving fault tolerance.
+    *   **Configure for WebSockets:** Ensure the load balancer supports long-lived WebSocket connections and consider "sticky sessions" (session affinity) to route a client to the same server instance, *or* design for stateless instances (see next point).
+*   **Externalize Session State:** Replace the `InMemorySessionService` for ADK with a distributed, persistent session store. This allows any server instance to handle any user's session, enabling true statelessness at the server level and improving fault tolerance.
 *   **Implement Health Checks:** Set up robust health checks for your WebSocket server instances so the load balancer can automatically remove unhealthy instances from rotation.
 *   **Utilize Orchestration:** Consider using an orchestration platform like Kubernetes for automated deployment, scaling, self-healing, and management of your WebSocket server instances.
