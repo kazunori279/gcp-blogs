@@ -245,6 +245,7 @@ session_service = InMemorySessionService()
 async def start_agent_session(user_id, is_audio=False):
     """Starts an agent session"""
 
+    # APP_NAME and session_service are defined in the Initialization section above
     runner = Runner(
         app_name=APP_NAME,
         agent=root_agent,
@@ -277,7 +278,7 @@ async def start_agent_session(user_id, is_audio=False):
     return live_events, live_request_queue
 ```
 
-This function initializes an ADK agent live session.
+This function initializes an ADK agent live session. It uses `APP_NAME` and `session_service` which are defined in the Initialization section above.
 
 | **Parameter** | **Type** | **Description** |
 |---|---|---|
