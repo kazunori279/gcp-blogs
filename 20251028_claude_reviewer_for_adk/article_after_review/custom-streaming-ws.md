@@ -256,6 +256,7 @@ from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.websockets import WebSocketDisconnect
 
 from google_search_agent.agent import root_agent
 ```
@@ -311,7 +312,8 @@ async def start_agent_session(user_id, is_audio=False):
 
     # Start streaming session - returns async iterator for agent responses
     live_events = runner.run_live(
-        session=session,
+        user_id=user_id,
+        session_id=session.id,
         live_request_queue=live_request_queue,
         run_config=run_config,
     )
@@ -333,6 +335,8 @@ This function initializes an ADK agent live session. It uses `APP_NAME` and `ses
 5.  **Start Agent Session:** `runner.run_live(...)` starts the agent, returning `live_events` (asynchronous iterable for agent events) and `live_request_queue` (queue to send data to the agent).
 
 **Returns:** `(live_events, live_request_queue)`.
+
+**Note on Runner Lifecycle:** In this example, we create a new `Runner` instance for each WebSocket connection for simplicity and ease of understanding. In production environments, you should create the runner once at application startup and reuse it for all connections to improve performance and resource utilization. See the production considerations section at the end of this article for implementation details.
 
 #### Session Resumption Configuration (Optional Enhancement)
 
@@ -383,47 +387,52 @@ Now that we've covered session initialization and optional enhancements, let's e
 
 async def agent_to_client_messaging(websocket, live_events):
     """Agent to client communication"""
-    while True:
-        async for event in live_events:
+    try:
+        while True:
+            async for event in live_events:
 
-            # If the turn complete or interrupted, send it
-            if event.turn_complete or event.interrupted:
-                message = {
-                    "turn_complete": event.turn_complete,
-                    "interrupted": event.interrupted,
-                }
-                await websocket.send_text(json.dumps(message))
-                print(f"[AGENT TO CLIENT]: {message}")
-                continue
-
-            # Read the Content and its first Part
-            part: Part = (
-                event.content and event.content.parts and event.content.parts[0]
-            )
-            if not part:
-                continue
-
-            # Audio data must be Base64-encoded for JSON transport
-            is_audio = part.inline_data and part.inline_data.mime_type.startswith("audio/pcm")
-            if is_audio:
-                audio_data = part.inline_data and part.inline_data.data
-                if audio_data:
+                # If the turn complete or interrupted, send it
+                if event.turn_complete or event.interrupted:
                     message = {
-                        "mime_type": "audio/pcm",
-                        "data": base64.b64encode(audio_data).decode("ascii")
+                        "turn_complete": event.turn_complete,
+                        "interrupted": event.interrupted,
                     }
                     await websocket.send_text(json.dumps(message))
-                    print(f"[AGENT TO CLIENT]: audio/pcm: {len(audio_data)} bytes.")
+                    print(f"[AGENT TO CLIENT]: {message}")
                     continue
 
-            # If it's text and a partial text, send it
-            if part.text and event.partial:
-                message = {
-                    "mime_type": "text/plain",
-                    "data": part.text
-                }
-                await websocket.send_text(json.dumps(message))
-                print(f"[AGENT TO CLIENT]: text/plain: {message}")
+                # Read the Content and its first Part
+                part: Part = (
+                    event.content and event.content.parts and event.content.parts[0]
+                )
+                if not part:
+                    continue
+
+                # Audio data must be Base64-encoded for JSON transport
+                is_audio = part.inline_data and part.inline_data.mime_type.startswith("audio/pcm")
+                if is_audio:
+                    audio_data = part.inline_data and part.inline_data.data
+                    if audio_data:
+                        message = {
+                            "mime_type": "audio/pcm",
+                            "data": base64.b64encode(audio_data).decode("ascii")
+                        }
+                        await websocket.send_text(json.dumps(message))
+                        print(f"[AGENT TO CLIENT]: audio/pcm: {len(audio_data)} bytes.")
+                        continue
+
+                # If it's text and a partial text, send it
+                if part.text and event.partial:
+                    message = {
+                        "mime_type": "text/plain",
+                        "data": part.text
+                    }
+                    await websocket.send_text(json.dumps(message))
+                    print(f"[AGENT TO CLIENT]: text/plain: {message}")
+    except WebSocketDisconnect:
+        print("Client disconnected from agent_to_client_messaging")
+    except Exception as e:
+        print(f"Error in agent_to_client_messaging: {e}")
 ```
 
 This asynchronous function streams ADK agent events to the WebSocket client.
@@ -443,22 +452,27 @@ This asynchronous function streams ADK agent events to the WebSocket client.
 
 async def client_to_agent_messaging(websocket, live_request_queue):
     """Client to agent communication"""
-    while True:
-        message_json = await websocket.receive_text()
-        message = json.loads(message_json)
-        mime_type = message["mime_type"]
-        data = message["data"]
+    try:
+        while True:
+            message_json = await websocket.receive_text()
+            message = json.loads(message_json)
+            mime_type = message["mime_type"]
+            data = message["data"]
 
-        if mime_type == "text/plain":
-            content = Content(role="user", parts=[Part.from_text(text=data)])
-            live_request_queue.send_content(content=content)
-            print(f"[CLIENT TO AGENT]: {data}")
-        elif mime_type == "audio/pcm":
-            # Audio is Base64-encoded for JSON transport, decode before sending
-            decoded_data = base64.b64decode(data)
-            live_request_queue.send_realtime(Blob(data=decoded_data, mime_type=mime_type))
-        else:
-            raise ValueError(f"Mime type not supported: {mime_type}")
+            if mime_type == "text/plain":
+                content = Content(role="user", parts=[Part.from_text(text=data)])
+                live_request_queue.send_content(content=content)
+                print(f"[CLIENT TO AGENT]: {data}")
+            elif mime_type == "audio/pcm":
+                # Audio is Base64-encoded for JSON transport, decode before sending
+                decoded_data = base64.b64decode(data)
+                live_request_queue.send_realtime(Blob(data=decoded_data, mime_type=mime_type))
+            else:
+                raise ValueError(f"Mime type not supported: {mime_type}")
+    except WebSocketDisconnect:
+        print("Client disconnected from client_to_agent_messaging")
+    except Exception as e:
+        print(f"Error in client_to_agent_messaging: {e}")
 ```
 
 This asynchronous function relays messages from the WebSocket client to the ADK agent.
@@ -472,11 +486,19 @@ This asynchronous function relays messages from the WebSocket client to the ADK 
 
 **Error Handling:**
 
-When a `ValueError` is raised for unsupported MIME types, the exception propagates up and terminates the `client_to_agent_messaging` task. This causes the WebSocket connection to close, as the error triggers the `FIRST_EXCEPTION` condition in the `websocket_endpoint` function's `asyncio.wait()` call.
+Both `agent_to_client_messaging` and `client_to_agent_messaging` functions include try-except blocks to handle WebSocket disconnections gracefully:
 
-For production environments, consider implementing more robust error handling:
-- Catch and log errors without terminating the connection for recoverable errors
-- Send error messages back to the client to inform them of invalid input
+- **`WebSocketDisconnect`**: Catches when the client disconnects unexpectedly and logs the disconnection without raising an error
+- **Generic `Exception`**: Catches any other errors (JSON parsing, Base64 decoding, etc.) and logs them for debugging
+
+This error handling ensures:
+- Clean shutdown when clients disconnect
+- Proper logging for debugging connection issues
+- The WebSocket connection closes gracefully without propagating unhandled exceptions
+- The `FIRST_EXCEPTION` condition in `asyncio.wait()` can still trigger for cleanup
+
+For production environments, consider additional error handling:
+- Send error messages back to the client to inform them of invalid input (before the connection closes)
 - Implement retry logic for transient failures
 - Add monitoring and alerting for error patterns
 - Validate message structure before processing to provide better error messages
@@ -802,6 +824,41 @@ The client-side JavaScript code manages a WebSocket connection, which can be re-
 ### Next steps for production
 
 When you will use the Streaming for ADK in production apps, you may want to consinder the following points:
+
+*   **Optimize Runner Lifecycle:** Create the `Runner` instance once at application startup instead of per-connection. This significantly improves performance and resource utilization.
+
+    ```python
+    # Create runner once at module level (before FastAPI app initialization)
+    runner = Runner(
+        app_name=APP_NAME,
+        agent=root_agent,
+        session_service=session_service,
+    )
+
+    async def start_agent_session(user_id, is_audio=False):
+        """Starts an agent session using the global runner"""
+
+        # Create a Session (reusing the global runner)
+        session = await runner.session_service.create_session(
+            app_name=APP_NAME,
+            user_id=user_id,
+        )
+
+        # Configure response format based on client preference
+        modality = "AUDIO" if is_audio else "TEXT"
+        run_config = RunConfig(response_modalities=[modality])
+
+        live_request_queue = LiveRequestQueue()
+
+        # Start streaming session using the global runner
+        live_events = runner.run_live(
+            user_id=user_id,
+            session_id=session.id,
+            live_request_queue=live_request_queue,
+            run_config=run_config,
+        )
+        return live_events, live_request_queue
+    ```
 
 *   **Deploy Multiple Instances:** Run several instances of your FastAPI application instead of a single one.
 *   **Implement Load Balancing:** Place a load balancer in front of your application instances to distribute incoming WebSocket connections.
