@@ -34,7 +34,7 @@ pip install --upgrade google-adk==1.10.0
 
 Set `SSL_CERT_FILE` variable with the following command.
 
-```shell
+```bash
 export SSL_CERT_FILE=$(python -m certifi)
 ```
 
@@ -133,7 +133,7 @@ Notice how easily you integrated [grounding with Google Search](https://ai.googl
 
 2\. **Start the Fast API**: Run the following command to start CLI interface with
 
-```console
+```bash
 uvicorn main:app --reload
 ```
 
@@ -527,7 +527,7 @@ Key functionalities:
 
 ### WebSocket Handling
 
-```JavaScript
+```javascript
 
 // Connect the server with a WebSocket connection
 const sessionId = Math.random().toString().substring(10);
@@ -674,7 +674,7 @@ function base64ToArray(base64) {
 
 ### Audio Handling
 
-```JavaScript
+```javascript
 
 let audioPlayerNode;
 let audioPlayerContext;
