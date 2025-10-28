@@ -221,7 +221,21 @@ from google_search_agent.agent import root_agent
 ```
 
 *   **Imports:** Includes standard Python libraries, `dotenv` for environment variables, Google ADK, and FastAPI.
-*   **`load_dotenv()`:** Loads environment variables.
+
+**Initialization:**
+
+```py
+# Load environment variables
+load_dotenv()
+
+# Application configuration
+APP_NAME = "adk-streaming-ws"
+
+# Initialize session service
+session_service = InMemorySessionService()
+```
+
+*   **`load_dotenv()`:** Loads environment variables from the `.env` file.
 *   **`APP_NAME`**: Application identifier for ADK.
 *   **`session_service = InMemorySessionService()`**: Initializes an in-memory ADK session service, suitable for single-instance or development use. Production might use a persistent store.
 
