@@ -315,13 +315,12 @@ async def start_agent_session(user_id, is_audio=False):
     # Either ["TEXT"] for text responses OR ["AUDIO"] for voice responses
     # You cannot use both modalities simultaneously in the same session
     modality = "AUDIO" if is_audio else "TEXT"
-    run_config = RunConfig(response_modalities=[modality])
 
-    # Optional: Enable session resumption for improved reliability
-    # run_config = RunConfig(
-    #     response_modalities=[modality],
-    #     session_resumption=types.SessionResumptionConfig()
-    # )
+    # Enable session resumption for improved reliability
+    run_config = RunConfig(
+        response_modalities=[modality],
+        session_resumption=types.SessionResumptionConfig()
+    )
 
     # Create LiveRequestQueue in async context (recommended best practice)
     # This ensures the queue uses the correct event loop
@@ -355,15 +354,11 @@ This function initializes an ADK agent live session. It uses `APP_NAME` and `ses
 
 **Note on Runner Lifecycle:** In this example, we create a new `Runner` instance for each WebSocket connection for simplicity and ease of understanding. **In production environments, you should create the runner once at application startup and reuse it for all connections** to improve performance and resource utilization. This is the recommended pattern from the ADK documentation. See the [Next steps for production](#next-steps-for-production) section at the end of this article for the production-ready implementation pattern.
 
-#### Session Resumption Configuration (Optional Enhancement)
-
-> **Note:** This is an optional feature that enhances the reliability of streaming sessions. You can skip this section if you want to continue with the basic implementation.
+#### Session Resumption Configuration
 
 ADK supports live session resumption to improve reliability during streaming conversations. This feature enables automatic reconnection when live connections are interrupted due to network issues.
 
-##### Enabling Session Resumption
-
-To enable session resumption, configure session resumption in RunConfig:
+This sample application enables session resumption by default in the `RunConfig`:
 
 ```py
 run_config = RunConfig(
@@ -386,13 +381,18 @@ run_config = RunConfig(
 - The feature is particularly beneficial for long-running streaming conversations
 - Connection interruptions become less disruptive to the user experience
 
-##### Troubleshooting
+##### Disabling Session Resumption (Optional)
 
-If you encounter errors with session resumption:
+If you encounter errors with session resumption or want to disable it:
 
 1. **Check model compatibility** - Ensure you're using a model that supports session resumption
 2. **API limitations** - Some session resumption features may not be available in all API versions
-3. **Remove session resumption** - If issues persist, you can disable session resumption by removing the `session_resumption` parameter from `RunConfig`
+3. **Disable session resumption** - You can disable session resumption by removing the `session_resumption` parameter from `RunConfig`:
+
+```py
+# Disable session resumption
+run_config = RunConfig(response_modalities=[modality])
+```
 
 ---
 
