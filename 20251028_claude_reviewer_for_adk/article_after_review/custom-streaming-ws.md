@@ -11,9 +11,10 @@ In order to use voice/video streaming in ADK, you will need to use Gemini models
 - [Google AI Studio: Gemini Live API](https://ai.google.dev/gemini-api/docs/models#live-api)
 - [Vertex AI: Gemini Live API](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api)
 
-> **Learn More:** An [SSE (Server-Sent Events) version](custom-streaming.md) of this sample is also available.
+!!! info "Learn More"
+    An [SSE (Server-Sent Events) version](custom-streaming.md) of this sample is also available.
 
-## 1. Install ADK {#1.-setup-installation}
+## 1. Install ADK {#1-setup-installation}
 
 Create & Activate Virtual Environment (Recommended):
 
@@ -64,7 +65,7 @@ adk-streaming-ws/
         └── agent.py # Agent definition
 ```
 
-## 2\. Set up the platform {#2.-set-up-the-platform}
+## 2. Set up the platform {#2-set-up-the-platform}
 
 To run the sample app, choose a platform from either Google AI Studio or Google Cloud Vertex AI:
 
@@ -125,19 +126,19 @@ Notice how easily you integrated [grounding with Google Search](https://ai.googl
 
 ![intro_components.png](../assets/quickstart-streaming-tool.png)
 
-## 3\. Interact with Your Streaming Application {#3.-interact-with-your-streaming-app}
+## 3. Interact with Your Streaming Application {#3-interact-with-your-streaming-app}
 
-1\. **Navigate to the Correct Directory:**
+1. **Navigate to the Correct Directory:**
 
    To run your agent effectively, make sure you are in the **app folder (`adk-streaming-ws/app`)**
 
-2\. **Start the Fast API**: Run the following command to start CLI interface with
+2. **Start the Fast API**: Run the following command to start CLI interface with
 
 ```bash
 uvicorn main:app --reload
 ```
 
-3\. **Access the app with the text mode:** Once the app starts, the terminal will display a local URL (e.g., [http://localhost:8000](http://localhost:8000)). Click this link to open the UI in your browser.
+3. **Access the app with the text mode:** Once the app starts, the terminal will display a local URL (e.g., [http://localhost:8000](http://localhost:8000)). Click this link to open the UI in your browser.
 
 Now you should see the UI like this:
 
@@ -145,7 +146,7 @@ Now you should see the UI like this:
 
 Try asking a question `What time is it now?`. The agent will use Google Search to respond to your queries. You would notice that the UI shows the agent's response as streaming text. You can also send messages to the agent at any time, even while the agent is still responding. This demonstrates the bidirectional communication capability of ADK Streaming.
 
-4\. **Access the app with the audio mode:** Now click the `Start Audio` button. The app reconnects with the server in an audio mode, and the UI will show the following dialog for the first time:
+4. **Access the app with the audio mode:** Now click the `Start Audio` button. The app reconnects with the server in an audio mode, and the UI will show the following dialog for the first time:
 
 ![ADK Streaming app](../assets/adk-streaming-audio-dialog.png)
 
@@ -155,7 +156,7 @@ Click `Allow while visiting the site`, then you will see the microphone icon wil
 
 Now you can talk to the agent with voice. Ask questions like `What time is it now?` with voice and you will hear the agent responding in voice too. As Streaming for ADK supports [multiple languages](https://ai.google.dev/gemini-api/docs/live#supported-languages), it can also respond to question in the supported languages.
 
-5\. **Check console logs**
+5. **Check console logs**
 
 If you are using the Chrome browser, use the right click and select `Inspect` to open the DevTools. On the `Console`, you can see the incoming and outgoing audio data such as `[CLIENT TO AGENT]` and `[AGENT TO CLIENT]`, representing the audio data streaming in and out between the browser and the server.
 
@@ -175,12 +176,12 @@ INFO:     127.0.0.1:50082 - "GET /favicon.ico HTTP/1.1" 404 Not Found
 
 These console logs are important in case you develop your own streaming application. In many cases, the communication failure between the browser and server becomes a major cause for the streaming application bugs.
 
-6\. **Troubleshooting tips**
+6. **Troubleshooting tips**
 
 - **When `ws://` doesn't work:** If you see any errors on the Chrome DevTools with regard to `ws://` connection, try replacing `ws://` with `wss://` on `app/static/js/app.js` at line 28. This may happen when you are running the sample on a cloud environment and using a proxy connection to connect from your browser.
 - **When `gemini-2.0-flash-exp` model doesn't work:** If you see any errors on the app server console with regard to `gemini-2.0-flash-exp` model availability, try replacing it with `gemini-2.0-flash-live-001` on `app/google_search_agent/agent.py` at line 6.
 
-## 4. Server code overview {#4.-server-side-code-overview}
+## 4. Server code overview {#4-server-side-code-overview}
 
 This server application enables real-time, streaming interaction with an ADK agent via WebSockets. Clients send text/audio to the ADK agent and receive streamed text/audio responses.
 
@@ -567,7 +568,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int, is_audio: str):
     *   `agent_to_client_messaging`: ADK `live_events` -> Client WebSocket.
 4.  Bidirectional streaming continues until disconnection or error.
 
-## 5. Client code overview {#5.-client-side-code-overview}
+## 5. Client code overview {#5-client-side-code-overview}
 
 The JavaScript `app.js` (in `app/static/js`) manages client-side interaction with the ADK Streaming WebSocket server. It handles sending text/audio and receiving/displaying streamed responses.
 
