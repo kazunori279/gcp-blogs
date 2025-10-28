@@ -190,6 +190,46 @@ Core functions:
 3.  Relay client messages to the ADK agent.
 4.  Stream ADK agent responses (text/audio) to clients.
 
+### Architecture Overview
+
+The following diagram illustrates how components interact in this streaming application:
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant FastAPI
+    participant ADK Runner
+    participant Gemini Live API
+
+    Note over Browser,Gemini Live API: Connection Establishment
+    Browser->>FastAPI: WebSocket Connect
+    FastAPI->>ADK Runner: start_agent_session()
+    ADK Runner->>Gemini Live API: Establish Live Session
+    Gemini Live API-->>ADK Runner: Session Ready
+
+    Note over Browser,Gemini Live API: Bidirectional Communication
+    Browser->>FastAPI: Send Text/Audio Message
+    FastAPI->>ADK Runner: send_content() / send_realtime()
+    ADK Runner->>Gemini Live API: Forward to Model
+    Gemini Live API-->>ADK Runner: Stream Response (live_events)
+    ADK Runner-->>FastAPI: Process Events
+    FastAPI-->>Browser: Send Response (Text/Audio)
+
+    Note over Browser,Gemini Live API: Continuous Streaming
+    loop Until Disconnection
+        Browser->>FastAPI: Additional Messages
+        FastAPI->>ADK Runner: Process Input
+        ADK Runner->>Gemini Live API: Forward
+        Gemini Live API-->>Browser: Streamed Responses
+    end
+```
+
+**Key Components:**
+- **Browser:** WebSocket client that sends/receives text and audio data
+- **FastAPI:** Server handling WebSocket connections and routing messages
+- **ADK Runner:** Manages agent sessions and coordinates with Gemini Live API
+- **Gemini Live API:** Processes requests and streams responses (text/audio)
+
 ### ADK Streaming Setup
 
 ```py
