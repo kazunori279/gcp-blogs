@@ -245,33 +245,30 @@ session_service = InMemorySessionService()
 async def start_agent_session(user_id, is_audio=False):
     """Starts an agent session"""
 
-    # Create a Runner
     runner = Runner(
         app_name=APP_NAME,
         agent=root_agent,
         session_service=session_service,
     )
 
-    # Create a Session
     session = await runner.session_service.create_session(
         app_name=APP_NAME,
         user_id=user_id,  # Replace with actual user ID
     )
 
-    # Set response modality
+    # Configure response format based on client preference
     modality = "AUDIO" if is_audio else "TEXT"
     run_config = RunConfig(response_modalities=[modality])
-    
+
     # Optional: Enable session resumption for improved reliability
     # run_config = RunConfig(
     #     response_modalities=[modality],
     #     session_resumption=types.SessionResumptionConfig()
     # )
 
-    # Create a LiveRequestQueue for this session
     live_request_queue = LiveRequestQueue()
 
-    # Start agent session
+    # Start streaming session - returns async iterator for agent responses
     live_events = runner.run_live(
         session=session,
         live_request_queue=live_request_queue,
@@ -361,7 +358,7 @@ async def agent_to_client_messaging(websocket, live_events):
             if not part:
                 continue
 
-            # If it's audio, send Base64 encoded audio data
+            # Audio data must be Base64-encoded for JSON transport
             is_audio = part.inline_data and part.inline_data.mime_type.startswith("audio/pcm")
             if is_audio:
                 audio_data = part.inline_data and part.inline_data.data
@@ -402,20 +399,17 @@ This asynchronous function streams ADK agent events to the WebSocket client.
 async def client_to_agent_messaging(websocket, live_request_queue):
     """Client to agent communication"""
     while True:
-        # Decode JSON message
         message_json = await websocket.receive_text()
         message = json.loads(message_json)
         mime_type = message["mime_type"]
         data = message["data"]
 
-        # Send the message to the agent
         if mime_type == "text/plain":
-            # Send a text message
             content = Content(role="user", parts=[Part.from_text(text=data)])
             live_request_queue.send_content(content=content)
             print(f"[CLIENT TO AGENT]: {data}")
         elif mime_type == "audio/pcm":
-            # Send an audio data
+            # Audio is Base64-encoded for JSON transport, decode before sending
             decoded_data = base64.b64decode(data)
             live_request_queue.send_realtime(Blob(data=decoded_data, mime_type=mime_type))
         else:
@@ -451,15 +445,13 @@ async def root():
 async def websocket_endpoint(websocket: WebSocket, user_id: int, is_audio: str):
     """Client websocket endpoint"""
 
-    # Wait for client connection
     await websocket.accept()
     print(f"Client #{user_id} connected, audio mode: {is_audio}")
 
-    # Start agent session
     user_id_str = str(user_id)
     live_events, live_request_queue = await start_agent_session(user_id_str, is_audio == "true")
 
-    # Start tasks
+    # Run bidirectional messaging concurrently
     agent_to_client_task = asyncio.create_task(
         agent_to_client_messaging(websocket, live_events)
     )
@@ -467,14 +459,12 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int, is_audio: str):
         client_to_agent_messaging(websocket, live_request_queue)
     )
 
-    # Wait until the websocket is disconnected or an error occurs
+    # Wait for either task to complete (connection close or error)
     tasks = [agent_to_client_task, client_to_agent_task]
     await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
 
-    # Close LiveRequestQueue
+    # Clean up resources
     live_request_queue.close()
-
-    # Disconnected
     print(f"Client #{user_id} disconnected")
 
 ```
