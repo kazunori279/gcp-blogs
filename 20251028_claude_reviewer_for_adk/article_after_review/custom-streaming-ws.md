@@ -295,7 +295,9 @@ This function initializes an ADK agent live session.
 
 **Returns:** `(live_events, live_request_queue)`.
 
-#### Session Resumption Configuration
+#### Session Resumption Configuration (Optional Enhancement)
+
+> **Note:** This is an optional feature that enhances the reliability of streaming sessions. You can skip this section if you want to continue with the basic implementation.
 
 ADK supports live session resumption to improve reliability during streaming conversations. This feature enables automatic reconnection when live connections are interrupted due to network issues.
 
@@ -331,6 +333,10 @@ If you encounter errors with session resumption:
 1. **Check model compatibility** - Ensure you're using a model that supports session resumption
 2. **API limitations** - Some session resumption features may not be available in all API versions
 3. **Remove session resumption** - If issues persist, you can disable session resumption by removing the `session_resumption` parameter from `RunConfig`
+
+---
+
+Now that we've covered session initialization and optional enhancements, let's explore the core messaging functions that handle bidirectional communication between the client and the ADK agent.
 
 #### `agent_to_client_messaging(websocket, live_events)`
 
