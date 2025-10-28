@@ -431,6 +431,17 @@ This asynchronous function relays messages from the WebSocket client to the ADK 
 4.  Raises `ValueError` for unsupported MIME types.
 5.  Logs messages.
 
+**Error Handling:**
+
+When a `ValueError` is raised for unsupported MIME types, the exception propagates up and terminates the `client_to_agent_messaging` task. This causes the WebSocket connection to close, as the error triggers the `FIRST_EXCEPTION` condition in the `websocket_endpoint` function's `asyncio.wait()` call.
+
+For production environments, consider implementing more robust error handling:
+- Catch and log errors without terminating the connection for recoverable errors
+- Send error messages back to the client to inform them of invalid input
+- Implement retry logic for transient failures
+- Add monitoring and alerting for error patterns
+- Validate message structure before processing to provide better error messages
+
 ### FastAPI Web Application
 
 ```py
