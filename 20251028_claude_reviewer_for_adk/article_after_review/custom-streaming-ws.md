@@ -201,6 +201,7 @@ import base64
 from pathlib import Path
 from dotenv import load_dotenv
 
+from google.genai import types
 from google.genai.types import (
     Part,
     Content,
@@ -224,7 +225,7 @@ from google_search_agent.agent import root_agent
 *   **`APP_NAME`**: Application identifier for ADK.
 *   **`session_service = InMemorySessionService()`**: Initializes an in-memory ADK session service, suitable for single-instance or development use. Production might use a persistent store.
 
-### `start_agent_session(session_id, is_audio=False)`
+#### `start_agent_session(session_id, is_audio=False)`
 
 ```py
 async def start_agent_session(user_id, is_audio=False):
@@ -282,20 +283,14 @@ This function initializes an ADK agent live session.
 
 **Returns:** `(live_events, live_request_queue)`.
 
-### Session Resumption Configuration
+#### Session Resumption Configuration
 
 ADK supports live session resumption to improve reliability during streaming conversations. This feature enables automatic reconnection when live connections are interrupted due to network issues.
 
-#### Enabling Session Resumption
+##### Enabling Session Resumption
 
-To enable session resumption, you need to:
+To enable session resumption, configure session resumption in RunConfig:
 
-1. **Import the required types**:
-```py
-from google.genai import types
-```
-
-2. **Configure session resumption in RunConfig**:
 ```py
 run_config = RunConfig(
     response_modalities=[modality],
@@ -303,21 +298,21 @@ run_config = RunConfig(
 )
 ```
 
-#### Session Resumption Features
+##### Session Resumption Features
 
 - **Automatic Handle Caching** - The system automatically caches session resumption handles during live conversations
 - **Transparent Reconnection** - When connections are interrupted, the system attempts to resume using cached handles
 - **Context Preservation** - Conversation context and state are maintained across reconnections
 - **Network Resilience** - Provides better user experience during unstable network conditions
 
-#### Implementation Notes
+##### Implementation Notes
 
 - Session resumption handles are managed internally by the ADK framework
 - No additional client-side code changes are required
 - The feature is particularly beneficial for long-running streaming conversations
 - Connection interruptions become less disruptive to the user experience
 
-#### Troubleshooting
+##### Troubleshooting
 
 If you encounter errors with session resumption:
 
@@ -325,7 +320,7 @@ If you encounter errors with session resumption:
 2. **API limitations** - Some session resumption features may not be available in all API versions
 3. **Remove session resumption** - If issues persist, you can disable session resumption by removing the `session_resumption` parameter from `RunConfig`
 
-### `agent_to_client_messaging(websocket, live_events)`
+#### `agent_to_client_messaging(websocket, live_events)`
 
 ```py
 
@@ -385,7 +380,7 @@ This asynchronous function streams ADK agent events to the WebSocket client.
     *   **Text Data:** If partial text, sends it as JSON: `{ "mime_type": "text/plain", "data": "<partial_text>" }`.
 4.  Logs messages.
 
-### `client_to_agent_messaging(websocket, live_request_queue)`
+#### `client_to_agent_messaging(websocket, live_request_queue)`
 
 ```py
 
