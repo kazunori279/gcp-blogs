@@ -847,58 +847,6 @@ The Python FastAPI server code initializes ADK agent sessions, configured for te
 
 The client-side JavaScript code manages a WebSocket connection, which can be re-established to switch between text and audio modes. It sends user input (text or microphone audio captured via Web Audio API and AudioWorklets) to the server. Incoming messages from the server are processed: text is displayed (streamed), and Base64-encoded PCM audio is decoded and played using an AudioWorklet.
 
-### Next steps for production
-
-When you will use ADK Bidi-streaming in production apps, you should consider the following critical optimizations and best practices. These recommendations come from the [ADK Bidi-streaming Guide](https://github.com/google/adk-python/tree/main/docs/streaming-guide) and production deployment experience.
-
-*   **Optimize Runner Lifecycle (Critical):** Create the `Runner` instance once at application startup instead of per-connection. This significantly improves performance and resource utilization. This is the **recommended pattern** from the ADK documentation.
-
-    ```python
-    # Create runner once at module level (before FastAPI app initialization)
-    runner = Runner(
-        app_name=APP_NAME,
-        agent=root_agent,
-        session_service=session_service,
-    )
-
-    async def start_agent_session(user_id, is_audio=False):
-        """Starts an agent session using the global runner"""
-
-        # Get or create session (recommended pattern for production)
-        session = await runner.session_service.get_session(
-            app_name=APP_NAME,
-            user_id=user_id,
-        )
-        if not session:
-            session = await runner.session_service.create_session(
-                app_name=APP_NAME,
-                user_id=user_id,
-            )
-
-        # Configure response format based on client preference
-        # Must choose exactly ONE modality - either ["TEXT"] or ["AUDIO"]
-        modality = "AUDIO" if is_audio else "TEXT"
-        run_config = RunConfig(response_modalities=[modality])
-
-        live_request_queue = LiveRequestQueue()
-
-        # Start streaming session using the global runner
-        live_events = runner.run_live(
-            user_id=user_id,
-            session_id=session.id,
-            live_request_queue=live_request_queue,
-            run_config=run_config,
-        )
-        return live_events, live_request_queue
-    ```
-
-*   **Deploy Multiple Instances:** Run several instances of your FastAPI application instead of a single one.
-*   **Implement Load Balancing:** Place a load balancer in front of your application instances to distribute incoming WebSocket connections.
-    *   **Configure for WebSockets:** Ensure the load balancer supports long-lived WebSocket connections and consider "sticky sessions" (session affinity) to route a client to the same server instance, *or* design for stateless instances (see next point).
-*   **Externalize Session State:** Replace the `InMemorySessionService` for ADK with a distributed, persistent session store. This allows any server instance to handle any user's session, enabling true statelessness at the server level and improving fault tolerance.
-*   **Implement Health Checks:** Set up robust health checks for your WebSocket server instances so the load balancer can automatically remove unhealthy instances from rotation.
-*   **Utilize Orchestration:** Consider using an orchestration platform like Kubernetes for automated deployment, scaling, self-healing, and management of your WebSocket server instances.
-
 ### Additional Resources
 
 For comprehensive guidance on ADK Bidi-streaming best practices, architecture patterns, and advanced features, refer to:
