@@ -1,6 +1,6 @@
 # Documentation Review Report: custom-streaming-ws.md
 
-**Document:** `/Users/kazsato/Documents/GitHub/gcp-blogs/20251028_claude_reviewer_for_adk/article_after_review/custom-streaming-ws.md`  
+**Document:** `gcp-blogs/20251028_claude_reviewer_for_adk/article_after_review/custom-streaming-ws.md`  
 **Reviewer:** Documentation Quality Review System  
 **Review Date:** 2025-10-28  
 **Report ID:** docs_review_report_custom-streaming-ws_20251028-162615

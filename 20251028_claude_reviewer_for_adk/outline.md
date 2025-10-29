@@ -1,5 +1,7 @@
 # Supercharge Tech Writing with Claude Code Subagents and Agent Skills
 
+## Outline
+
 - Challenge: improving my past article on ADK Bidi-streaming
   - https://google.github.io/adk-docs/streaming/custom-streaming-ws/
   - I wanted to update the content for the latest ADK version
@@ -29,9 +31,19 @@
   - An example of [Review report](reviews/docs_review_report_custom-streaming-ws_20251028-162615)
   - Review the issues one by one. Let Claude Code fix the issue based on the recommendation options
 
-Review process example on C2:
+## Review process examples
 
-```
+### Docs review process
+
+#### The docs-reviwer agent report
+
+- 20251028_claude_reviewer_for_adk/reviews/docs_review_report_custom-streaming-ws_20251028-162615.md
+
+#### Fixing the docs issues with Claude Code
+
+- prompt: "Fix C2"
+
+```text
 Excellent! I've successfully fixed C2. Here's a summary of the changes made:
 
   C2 Fix Summary
@@ -52,9 +64,9 @@ Excellent! I've successfully fixed C2. Here's a summary of the changes made:
   walkthrough.
 ```
 
-Review process example on W1:
+- Prompt: "Fix W1"
 
-```
+```text
 W1 Fix Summary
 
   Issue: Inconsistent Heading Level Structure - Section headings used inconsistent levels with some subsections using ### while function descriptions also used ###, creating unclear hierarchy.
@@ -82,7 +94,9 @@ W1 Fix Summary
   Result: Consistent heading hierarchy throughout the document that clearly distinguishes between conceptual sections, function definitions, and detailed subsections.
 ```
 
-```
+- Prompt: "Fix W3"
+
+```text
 W3 Fix Summary
 
   Issue: Missing Cross-References - References to related content didn't follow consistent format, with awkward wording and unclear cross-reference style.
@@ -106,14 +120,18 @@ W3 Fix Summary
   Result: Cross-references now follow a consistent, professional format with clear callout styling that improves document navigation and readability.
 ```
 
-- ADK related review process with `adk-reviewer` agent
-  - Use `adk-reviewer` agent for the article on Claude Code
-  - An example of [Review report](reviews/adk_review_report_custom-streaming-ws_20251028-163305.md)
-  - Review the issues one by one. Let Claude Code fix the issue based on the recommendation options
+### ADK review process
 
-Review process example with C1:
+#### The adk-reviwer agent report
 
-```
+- 20251028_claude_reviewer_for_adk/reviews/adk_review_report_custom-streaming-ws_20251028-163305.md
+
+#### Fixing the ADK issues with Claude Code
+
+- Request to Claude Code: "Fix C1"
+- Response from Claude Code:
+
+```text
 Perfect! I've successfully updated the article to address the critical issue C1 from the review report. The change replaces the deprecated session parameter with the current user_id and
   session_id parameters in the run_live() call.
 
@@ -127,11 +145,10 @@ Perfect! I've successfully updated the article to address the critical issue C1 
   This aligns the code with the current ADK API signature and removes the use of the deprecated parameter that triggers a DeprecationWarning in ADK version 1.10.0+.
 ```
 
-```
-For W2, is it possible that the partial=True text event could lose final text chunk? Check with the google-adk skill.
-```
+- Request to Claude Code: "For W2, is it possible that the partial=True text event could lose final text chunk? Check with the google-adk skill."
+- Response from Claude Code:
 
-```
+```text
 Perfect! The comment at lines 122-123 confirms: "The text should not partial and the returned LlmResponse is not be partial."
 
   So the flow for run_live() with TEXT mode is:
@@ -210,11 +227,12 @@ Perfect! The comment at lines 122-123 confirms: "The text should not partial and
   My recommendation: Use Option 1 - the current code avoids duplication and works correctly for streaming. Just add documentation to explain why only partial=True is handled.
 ```
 
-> use google-adk skill to add output audio transcript support to article_after_review/app/main.py . Update the main.py to support 1) use audio transcript to return text message to the UI for 
-native audio models and 2) use the usual text event to return text message to the UI for cascade audio models. 
+- Request to Claude Code: "use google-adk skill to add output audio transcript support to article_after_review/app/main.py . Update the main.py to support 1) use audio transcript to return text message to the UI for native audio models and 2) use the usual text event to return text message to the UI for cascade audio models."
 
-```
-erfect! I've successfully updated the main.py file in article_after_review/adk-streaming-ws/app/ to support audio transcript output for both native and cascade audio models. Here's what I
+- Response from Claude Code:
+
+```text
+Perfect! I've successfully updated the main.py file in article_after_review/adk-streaming-ws/app/ to support audio transcript output for both native and cascade audio models. Here's what I
   changed:
 
   Changes Made:

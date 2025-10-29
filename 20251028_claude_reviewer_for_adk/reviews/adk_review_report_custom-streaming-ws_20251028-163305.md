@@ -1,6 +1,6 @@
 # ADK Review Report: custom-streaming-ws.md
 
-**Target File:** `/Users/kazsato/Documents/GitHub/gcp-blogs/20251028_claude_reviewer_for_adk/article_after_review/custom-streaming-ws.md`
+**Target File:** `custom-streaming-ws.md`
 
 **Review Date:** 2025-10-28 16:33:05
 
@@ -27,11 +27,11 @@ The main concerns are:
 
 **Problem Statement:**
 
-The code example in the article uses the deprecated `session` parameter when calling `runner.run_live()`. According to the ADK source code (`/Users/kazsato/Documents/GitHub/adk-python/src/google/adk/runners.py`, lines 726-779), the `session` parameter is deprecated and should be replaced with `user_id` and `session_id` parameters.
+The code example in the article uses the deprecated `session` parameter when calling `runner.run_live()`. According to the ADK source code (`adk-python/src/google/adk/runners.py`, lines 726-779), the `session` parameter is deprecated and should be replaced with `user_id` and `session_id` parameters.
 
 **Target Code:**
 
-- **File:** Article line 230-264 (code example) and `/Users/kazsato/Documents/GitHub/gcp-blogs/20251028_claude_reviewer_for_adk/article_after_review/adk-streaming-ws/app/main.py` lines 79-83
+- **File:** Article line 230-264 (code example) and `gcp-blogs/20251028_claude_reviewer_for_adk/article_after_review/adk-streaming-ws/app/main.py` lines 79-83
 
 ```python
 # Start agent session

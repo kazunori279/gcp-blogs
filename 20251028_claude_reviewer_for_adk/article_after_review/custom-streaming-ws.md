@@ -960,7 +960,6 @@ The client-side JavaScript code manages a WebSocket connection, which can be re-
 
 For comprehensive guidance on ADK Bidi-streaming best practices, architecture patterns, and advanced features, refer to:
 
-- **[ADK Bidi-streaming Guide](https://github.com/google/adk-python/tree/main/docs/streaming-guide)**: Official guide covering LiveRequestQueue, event handling, RunConfig, and audio/video streaming
 - **[ADK Documentation](https://google.github.io/adk-docs/)**: Complete ADK documentation including agents, tools, and session management
 - **[Gemini Live API Documentation](https://ai.google.dev/gemini-api/docs/live)**: Live API reference for Google AI Studio
 - **[Vertex AI Live API Documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api)**: Live API reference for Google Cloud Vertex AI
