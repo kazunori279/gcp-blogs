@@ -55,16 +55,15 @@ APP_NAME = "adk-streaming-ws"
 # Initialize session service
 session_service = InMemorySessionService()
 
+# APP_NAME and session_service are defined in the Initialization section above
+runner = Runner(
+    app_name=APP_NAME,
+    agent=root_agent,
+    session_service=session_service,
+)
 
 async def start_agent_session(user_id, is_audio=False):
     """Starts an agent session"""
-
-    # APP_NAME and session_service are defined in the Initialization section above
-    runner = Runner(
-        app_name=APP_NAME,
-        agent=root_agent,
-        session_service=session_service,
-    )
 
     # Get or create session (recommended pattern for production)
     session = await runner.session_service.get_session(
@@ -84,9 +83,11 @@ async def start_agent_session(user_id, is_audio=False):
     modality = "AUDIO" if is_audio else "TEXT"
 
     # Enable session resumption for improved reliability
+    # For audio mode, enable output transcription to get text for UI display
     run_config = RunConfig(
         response_modalities=[modality],
-        session_resumption=types.SessionResumptionConfig()
+        session_resumption=types.SessionResumptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig() if is_audio else None,
     )
 
     # Create LiveRequestQueue in async context (recommended best practice)
@@ -118,6 +119,20 @@ async def agent_to_client_messaging(websocket, live_events):
                 print(f"[AGENT TO CLIENT]: {message}")
                 continue
 
+            # Handle output audio transcription for native audio models
+            # This provides text representation of audio output for UI display
+            if event.output_transcription and event.output_transcription.text:
+                transcript_text = event.output_transcription.text
+                message = {
+                    "mime_type": "text/plain",
+                    "data": transcript_text,
+                    "is_transcript": True
+                }
+                await websocket.send_text(json.dumps(message))
+                print(f"[AGENT TO CLIENT]: audio transcript: {transcript_text}")
+                # Continue to process audio data if present
+                # Don't return here as we may want to send both transcript and audio
+
             # Read the Content and its first Part
             part: Part = (
                 event.content and event.content.parts and event.content.parts[0]
@@ -138,7 +153,7 @@ async def agent_to_client_messaging(websocket, live_events):
                     print(f"[AGENT TO CLIENT]: audio/pcm: {len(audio_data)} bytes.")
                     continue
 
-            # If it's text and a partial text, send it
+            # If it's text and a partial text, send it (for cascade audio models or text mode)
             if part.text and event.partial:
                 message = {
                     "mime_type": "text/plain",
@@ -220,10 +235,18 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int, is_audio: str):
         client_to_agent_messaging(websocket, live_request_queue)
     )
 
-    # Wait for either task to complete (connection close or error)
-    tasks = [agent_to_client_task, client_to_agent_task]
-    await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+    try:
+        # Wait for either task to complete (connection close or error)
+        tasks = [agent_to_client_task, client_to_agent_task]
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
 
-    # Clean up resources
-    live_request_queue.close()
-    print(f"Client #{user_id} disconnected")
+        # Check for errors in completed tasks
+        for task in done:
+            if task.exception() is not None:
+                print(f"Task error for client #{user_id}: {task.exception()}")
+                import traceback
+                traceback.print_exception(type(task.exception()), task.exception(), task.exception().__traceback__)
+    finally:
+        # Clean up resources (always runs, even if asyncio.wait fails)
+        live_request_queue.close()
+        print(f"Client #{user_id} disconnected")
