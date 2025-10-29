@@ -1,3 +1,8 @@
 # Test prompt for Claude Code
 
-create a temp directory under /tmp/test_<timestamp>, and use it for building the sample app by following article_after_review/custom-streaming-ws.md. Also, write a test_log_<timestamp>.md to the temp directory with the actual procedures, outcomes, errors or frictions, or possible improvement points for the entire building process.
+## Test procedure
+
+1. Create a working directory under /tmp/test_<timestamp>, 
+2. Prompt user for .env variable values
+3. Follow the instruction in article_after_review/custom-streaming-ws.md to build the app in the working directory
+4. write a test_log_<timestamp>.md to the working directory with the actual procedures, outcomes, errors or frictions, or possible improvement points for the entire process.

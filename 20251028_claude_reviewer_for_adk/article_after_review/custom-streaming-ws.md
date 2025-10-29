@@ -13,6 +13,15 @@ In order to use voice/video streaming in ADK, you will need to use Gemini models
 
 ## 1. Install ADK {#1-setup-installation}
 
+Download the sample code:
+
+```bash
+curl -L https://github.com/google/adk-docs/archive/refs/heads/main.tar.gz | \
+  tar xz --strip=5 adk-docs-main/examples/python/snippets/streaming/adk-streaming-ws
+
+cd adk-streaming-ws
+```
+
 Create & Activate Virtual Environment (Recommended):
 
 ```bash
@@ -36,15 +45,10 @@ Set `SSL_CERT_FILE` variable with the following command.
 export SSL_CERT_FILE=$(python -m certifi)
 ```
 
-Download the sample code:
+Navigate to the app folder:
 
 ```bash
-git clone --no-checkout https://github.com/google/adk-docs.git
-cd adk-docs
-git sparse-checkout init --cone
-git sparse-checkout set examples/python/snippets/streaming/adk-streaming-ws
-git checkout main
-cd examples/python/snippets/streaming/adk-streaming-ws/app
+cd app
 ```
 
 This sample code has the following files and folders:
