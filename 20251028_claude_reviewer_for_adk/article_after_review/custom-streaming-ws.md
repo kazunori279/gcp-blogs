@@ -248,9 +248,13 @@ import os
 import json
 import asyncio
 import base64
+import warnings
 
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Load environment variables BEFORE importing the agent
+load_dotenv()
 
 from google.genai import types
 from google.genai.types import (
@@ -270,15 +274,20 @@ from fastapi.responses import FileResponse
 from fastapi.websockets import WebSocketDisconnect
 
 from google_search_agent.agent import root_agent
+
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 ```
 
-*   **Imports:** Includes standard Python libraries, `dotenv` for environment variables, Google ADK, and FastAPI.
+*   **Imports:** Includes standard Python libraries (`os`, `json`, `asyncio`, `base64`, `warnings`), `dotenv` for environment variables, Google ADK (`types`, `Part`, `Content`, `Blob`, `Runner`, `LiveRequestQueue`, `RunConfig`, `StreamingMode`, `InMemorySessionService`), and FastAPI (`FastAPI`, `WebSocket`, `StaticFiles`, `FileResponse`, `WebSocketDisconnect`).
+*   **`load_dotenv()`:** Called immediately after importing dotenv and **before** importing the agent. This ensures environment variables (like `DEMO_AGENT_MODEL`) are available when the agent module initializes.
+*   **`warnings.filterwarnings()`:** Suppresses Pydantic UserWarnings to reduce console noise during development.
 
 **Initialization:**
 
 ```py
-# Load environment variables
-load_dotenv()
+#
+# ADK Streaming
+#
 
 # Application configuration
 APP_NAME = "adk-streaming-ws"
@@ -294,12 +303,11 @@ runner = Runner(
 )
 ```
 
-*   **`load_dotenv()`:** Loads environment variables from the `.env` file.
 *   **`APP_NAME`**: Application identifier for ADK.
 *   **`session_service = InMemorySessionService()`**: Initializes an in-memory ADK session service, suitable for single-instance or development use. Production might use a persistent store.
 *   **`runner = Runner(...)`**: Creates the Runner instance **once at module level** (production-ready pattern). This reuses the same runner for all connections, improving performance and resource utilization.
 
-#### `start_agent_session(session_id, is_audio=False)`
+#### `start_agent_session(user_id, is_audio=False)`
 
 ```py
 async def start_agent_session(user_id, is_audio=False):
@@ -361,21 +369,22 @@ This function initializes an ADK agent live session. It uses `APP_NAME` and `ses
 | `is_audio` | `bool` | `True` for audio responses, `False` for text (default). |
 
 **Key Steps:**
-1.  **Create Runner:** Instantiates the ADK runner for the `root_agent` with the `session_service`.
-2.  **Create Session:** Establishes an ADK session using the runner's session service.
-3.  **Configure Streaming Mode:** Sets `streaming_mode=StreamingMode.BIDI` to enable bidirectional streaming, allowing simultaneous sending and receiving of data.
-4.  **Set Response Modality:** Configures agent response as "AUDIO" or "TEXT".
-5.  **Create LiveRequestQueue:** Creates a queue for client inputs to the agent.
-6.  **Start Agent Session:** `runner.run_live(...)` starts the agent, returning `live_events` (asynchronous iterable for agent events) and `live_request_queue` (queue to send data to the agent).
+1.  **Get or Create Session:** Attempts to retrieve an existing session, or creates a new one if it doesn't exist. This pattern supports session persistence and resumption.
+2.  **Detect Native Audio Models:** Checks if the agent's model name contains "native-audio" to automatically force AUDIO modality for native audio models.
+3.  **Configure Response Modality:** Sets modality to "AUDIO" if either `is_audio=True` or the model is a native audio model, otherwise "TEXT". Note: You must choose exactly ONE modality per session.
+4.  **Enable Session Resumption:** Configures `session_resumption=types.SessionResumptionConfig()` for improved reliability during network interruptions.
+5.  **Enable Output Transcription (Audio Mode):** When using audio mode or native audio models, enables `output_audio_transcription` to get text representation of audio responses for UI display.
+6.  **Create LiveRequestQueue:** Creates a queue in async context (best practice) for sending client inputs to the agent.
+7.  **Start Agent Session:** Calls `runner.run_live(...)` to start the streaming session, returning `live_events` (async iterator for agent responses) and the `live_request_queue`.
 
 **Returns:** `(live_events, live_request_queue)`.
 
 #### Output Audio Transcription
 
-When using audio mode (`is_audio=True`), the application enables output audio transcription through `RunConfig`:
+When using audio mode (`is_audio=True`) or native audio models (`is_native_audio=True`), the application enables output audio transcription through `RunConfig`:
 
 ```py
-output_audio_transcription=types.AudioTranscriptionConfig() if is_audio else None,
+output_audio_transcription=types.AudioTranscriptionConfig() if (is_audio or is_native_audio) else None,
 ```
 
 **Audio Transcription Features:**
@@ -451,16 +460,6 @@ async def agent_to_client_messaging(websocket, live_events):
     try:
         async for event in live_events:
 
-            # If the turn complete or interrupted, send it
-            if event.turn_complete or event.interrupted:
-                message = {
-                    "turn_complete": event.turn_complete,
-                    "interrupted": event.interrupted,
-                }
-                await websocket.send_text(json.dumps(message))
-                print(f"[AGENT TO CLIENT]: {message}")
-                continue
-
             # Handle output audio transcription for native audio models
             # This provides text representation of audio output for UI display
             if event.output_transcription and event.output_transcription.text:
@@ -479,30 +478,36 @@ async def agent_to_client_messaging(websocket, live_events):
             part: Part = (
                 event.content and event.content.parts and event.content.parts[0]
             )
-            if not part:
-                continue
+            if part:
+                # Audio data must be Base64-encoded for JSON transport
+                is_audio = part.inline_data and part.inline_data.mime_type.startswith("audio/pcm")
+                if is_audio:
+                    audio_data = part.inline_data and part.inline_data.data
+                    if audio_data:
+                        message = {
+                            "mime_type": "audio/pcm",
+                            "data": base64.b64encode(audio_data).decode("ascii")
+                        }
+                        await websocket.send_text(json.dumps(message))
+                        print(f"[AGENT TO CLIENT]: audio/pcm: {len(audio_data)} bytes.")
 
-            # Audio data must be Base64-encoded for JSON transport
-            is_audio = part.inline_data and part.inline_data.mime_type.startswith("audio/pcm")
-            if is_audio:
-                audio_data = part.inline_data and part.inline_data.data
-                if audio_data:
+                # If it's text and a partial text, send it (for cascade audio models or text mode)
+                if part.text and event.partial:
                     message = {
-                        "mime_type": "audio/pcm",
-                        "data": base64.b64encode(audio_data).decode("ascii")
+                        "mime_type": "text/plain",
+                        "data": part.text
                     }
                     await websocket.send_text(json.dumps(message))
-                    print(f"[AGENT TO CLIENT]: audio/pcm: {len(audio_data)} bytes.")
-                    continue
+                    print(f"[AGENT TO CLIENT]: text/plain: {message}")
 
-            # If it's text and a partial text, send it (for cascade audio models or text mode)
-            if part.text and event.partial:
+            # If the turn complete or interrupted, send it
+            if event.turn_complete or event.interrupted:
                 message = {
-                    "mime_type": "text/plain",
-                    "data": part.text
+                    "turn_complete": event.turn_complete,
+                    "interrupted": event.interrupted,
                 }
                 await websocket.send_text(json.dumps(message))
-                print(f"[AGENT TO CLIENT]: text/plain: {message}")
+                print(f"[AGENT TO CLIENT]: {message}")
     except WebSocketDisconnect:
         print("Client disconnected from agent_to_client_messaging")
     except Exception as e:
@@ -513,12 +518,12 @@ This asynchronous function streams ADK agent events to the WebSocket client.
 
 **Logic:**
 1.  Iterates through `live_events` from the agent.
-2.  **Turn Completion/Interruption:** Sends status flags to the client (see explanation below).
-3.  **Audio Transcription (Native Audio Models):** If the event contains output audio transcription text, sends it to the client with an `is_transcript` flag: `{ "mime_type": "text/plain", "data": "<transcript_text>", "is_transcript": True }`. This enables displaying the audio content as text in the UI.
-4.  **Content Processing:**
-    *   Extracts the first `Part` from event content.
+2.  **Audio Transcription (Native Audio Models):** If the event contains output audio transcription text, sends it to the client with an `is_transcript` flag: `{ "mime_type": "text/plain", "data": "<transcript_text>", "is_transcript": True }`. This enables displaying the audio content as text in the UI.
+3.  **Content Processing:**
+    *   Extracts the first `Part` from event content (if it exists).
     *   **Audio Data:** If audio (PCM), Base64 encodes and sends it as JSON: `{ "mime_type": "audio/pcm", "data": "<base64_audio>" }`.
     *   **Text Data (Cascade Audio Models or Text Mode):** If partial text, sends it as JSON: `{ "mime_type": "text/plain", "data": "<partial_text>" }`.
+4.  **Turn Completion/Interruption:** Sends status flags to the client at the end of each event (see explanation below).
 5.  Logs messages.
 
 **Understanding Turn Completion and Interruption Events:**
@@ -603,6 +608,10 @@ For production environments, consider additional error handling:
 ### FastAPI Web Application
 
 ```py
+
+#
+# FastAPI web app
+#
 
 app = FastAPI()
 
