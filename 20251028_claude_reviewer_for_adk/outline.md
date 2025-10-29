@@ -209,3 +209,52 @@ Perfect! The comment at lines 122-123 confirms: "The text should not partial and
 
   My recommendation: Use Option 1 - the current code avoids duplication and works correctly for streaming. Just add documentation to explain why only partial=True is handled.
 ```
+
+> use google-adk skill to add output audio transcript support to article_after_review/app/main.py . Update the main.py to support 1) use audio transcript to return text message to the UI for 
+native audio models and 2) use the usual text event to return text message to the UI for cascade audio models. 
+
+```
+erfect! I've successfully updated the main.py file in article_after_review/adk-streaming-ws/app/ to support audio transcript output for both native and cascade audio models. Here's what I
+  changed:
+
+  Changes Made:
+
+  1. Enabled Output Audio Transcription in RunConfig (main.py:86-92)
+
+  Added output_audio_transcription configuration when audio mode is enabled:
+
+  run_config = RunConfig(
+      response_modalities=[modality],
+      session_resumption=types.SessionResumptionConfig(),
+      output_audio_transcription=types.AudioTranscriptionConfig() if is_audio else None,
+  )
+
+  2. Updated agent_to_client_messaging Function (main.py:123-135)
+
+  Added handling for output audio transcripts before processing audio/text data:
+
+  # Handle output audio transcription for native audio models
+  # This provides text representation of audio output for UI display
+  if event.output_transcription and event.output_transcription.text:
+      transcript_text = event.output_transcription.text
+      message = {
+          "mime_type": "text/plain",
+          "data": transcript_text,
+          "is_transcript": True
+      }
+      await websocket.send_text(json.dumps(message))
+      print(f"[AGENT TO CLIENT]: audio transcript: {transcript_text}")
+
+  How It Works:
+
+  1. For Native Audio Models (like Gemini 2.0 Flash):
+    - When is_audio=true, the model generates audio natively
+    - With output_audio_transcription enabled, the ADK provides transcripts via event.output_transcription
+    - The code sends these transcripts as text messages to the UI with is_transcript: True flag
+    - Audio data is also sent separately for playback
+  2. For Cascade/Text Models:
+    - When using text modality or models without native audio, the existing text handling works (main.py:157-164)
+    - The code sends text events as usual via part.text when event.partial is true
+
+  The implementation supports both approaches seamlessly, providing text output to the UI regardless of whether the model uses native audio or text-to-speech conversion.
+  ```

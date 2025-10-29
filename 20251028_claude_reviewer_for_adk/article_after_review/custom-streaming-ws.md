@@ -11,9 +11,6 @@ In order to use voice/video streaming in ADK, you will need to use Gemini models
 - [Google AI Studio: Gemini Live API](https://ai.google.dev/gemini-api/docs/models#live-api)
 - [Vertex AI: Gemini Live API](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api)
 
-!!! info "Learn More"
-    An [SSE (Server-Sent Events) version](custom-streaming.md) of this sample is also available.
-
 ## 1. Install ADK {#1-setup-installation}
 
 Create & Activate Virtual Environment (Recommended):
@@ -256,7 +253,7 @@ from google.genai.types import (
 
 from google.adk.runners import Runner
 from google.adk.agents import LiveRequestQueue
-from google.adk.agents.run_config import RunConfig
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 
 from fastapi import FastAPI, WebSocket
@@ -280,24 +277,25 @@ APP_NAME = "adk-streaming-ws"
 
 # Initialize session service
 session_service = InMemorySessionService()
+
+# APP_NAME and session_service are defined in the Initialization section above
+runner = Runner(
+    app_name=APP_NAME,
+    agent=root_agent,
+    session_service=session_service,
+)
 ```
 
 *   **`load_dotenv()`:** Loads environment variables from the `.env` file.
 *   **`APP_NAME`**: Application identifier for ADK.
 *   **`session_service = InMemorySessionService()`**: Initializes an in-memory ADK session service, suitable for single-instance or development use. Production might use a persistent store.
+*   **`runner = Runner(...)`**: Creates the Runner instance **once at module level** (production-ready pattern). This reuses the same runner for all connections, improving performance and resource utilization.
 
 #### `start_agent_session(session_id, is_audio=False)`
 
 ```py
 async def start_agent_session(user_id, is_audio=False):
     """Starts an agent session"""
-
-    # APP_NAME and session_service are defined in the Initialization section above
-    runner = Runner(
-        app_name=APP_NAME,
-        agent=root_agent,
-        session_service=session_service,
-    )
 
     # Get or create session (recommended pattern for production)
     session = await runner.session_service.get_session(
@@ -317,9 +315,12 @@ async def start_agent_session(user_id, is_audio=False):
     modality = "AUDIO" if is_audio else "TEXT"
 
     # Enable session resumption for improved reliability
+    # For audio mode, enable output transcription to get text for UI display
     run_config = RunConfig(
+        streaming_mode=StreamingMode.BIDI,
         response_modalities=[modality],
-        session_resumption=types.SessionResumptionConfig()
+        session_resumption=types.SessionResumptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig() if is_audio else None,
     )
 
     # Create LiveRequestQueue in async context (recommended best practice)
@@ -346,13 +347,36 @@ This function initializes an ADK agent live session. It uses `APP_NAME` and `ses
 **Key Steps:**
 1.  **Create Runner:** Instantiates the ADK runner for the `root_agent` with the `session_service`.
 2.  **Create Session:** Establishes an ADK session using the runner's session service.
-3.  **Set Response Modality:** Configures agent response as "AUDIO" or "TEXT".
-4.  **Create LiveRequestQueue:** Creates a queue for client inputs to the agent.
-5.  **Start Agent Session:** `runner.run_live(...)` starts the agent, returning `live_events` (asynchronous iterable for agent events) and `live_request_queue` (queue to send data to the agent).
+3.  **Configure Streaming Mode:** Sets `streaming_mode=StreamingMode.BIDI` to enable bidirectional streaming, allowing simultaneous sending and receiving of data.
+4.  **Set Response Modality:** Configures agent response as "AUDIO" or "TEXT".
+5.  **Create LiveRequestQueue:** Creates a queue for client inputs to the agent.
+6.  **Start Agent Session:** `runner.run_live(...)` starts the agent, returning `live_events` (asynchronous iterable for agent events) and `live_request_queue` (queue to send data to the agent).
 
 **Returns:** `(live_events, live_request_queue)`.
 
-**Note on Runner Lifecycle:** In this example, we create a new `Runner` instance for each WebSocket connection for simplicity and ease of understanding. **In production environments, you should create the runner once at application startup and reuse it for all connections** to improve performance and resource utilization. This is the recommended pattern from the ADK documentation. See the [Next steps for production](#next-steps-for-production) section at the end of this article for the production-ready implementation pattern.
+#### Output Audio Transcription
+
+When using audio mode (`is_audio=True`), the application enables output audio transcription through `RunConfig`:
+
+```py
+output_audio_transcription=types.AudioTranscriptionConfig() if is_audio else None,
+```
+
+**Audio Transcription Features:**
+
+- **Native Audio Model Support** - Works with models that have native audio output capability
+- **Text Representation** - Provides text transcription of audio responses for UI display
+- **Dual Output** - Enables both audio playback and text visualization simultaneously
+- **Enhanced Accessibility** - Allows users to see what the agent is saying while hearing it
+
+**Use Cases:**
+
+- Display audio responses as text in the UI for better user experience
+- Enable accessibility features for users who prefer text
+- Support debugging by logging what the agent says
+- Create conversation transcripts alongside audio
+
+**Note:** This feature requires models that support output audio transcription. Not all Live API models may support this capability.
 
 #### Session Resumption Configuration
 
@@ -362,6 +386,7 @@ This sample application enables session resumption by default in the `RunConfig`
 
 ```py
 run_config = RunConfig(
+    streaming_mode=StreamingMode.BIDI,
     response_modalities=[modality],
     session_resumption=types.SessionResumptionConfig()
 )
@@ -391,7 +416,10 @@ If you encounter errors with session resumption or want to disable it:
 
 ```py
 # Disable session resumption
-run_config = RunConfig(response_modalities=[modality])
+run_config = RunConfig(
+    streaming_mode=StreamingMode.BIDI,
+    response_modalities=[modality]
+)
 ```
 
 ---
@@ -405,47 +433,60 @@ Now that we've covered session initialization and optional enhancements, let's e
 async def agent_to_client_messaging(websocket, live_events):
     """Agent to client communication"""
     try:
-        while True:
-            async for event in live_events:
+        async for event in live_events:
 
-                # If the turn complete or interrupted, send it
-                if event.turn_complete or event.interrupted:
+            # If the turn complete or interrupted, send it
+            if event.turn_complete or event.interrupted:
+                message = {
+                    "turn_complete": event.turn_complete,
+                    "interrupted": event.interrupted,
+                }
+                await websocket.send_text(json.dumps(message))
+                print(f"[AGENT TO CLIENT]: {message}")
+                continue
+
+            # Handle output audio transcription for native audio models
+            # This provides text representation of audio output for UI display
+            if event.output_transcription and event.output_transcription.text:
+                transcript_text = event.output_transcription.text
+                message = {
+                    "mime_type": "text/plain",
+                    "data": transcript_text,
+                    "is_transcript": True
+                }
+                await websocket.send_text(json.dumps(message))
+                print(f"[AGENT TO CLIENT]: audio transcript: {transcript_text}")
+                # Continue to process audio data if present
+                # Don't return here as we may want to send both transcript and audio
+
+            # Read the Content and its first Part
+            part: Part = (
+                event.content and event.content.parts and event.content.parts[0]
+            )
+            if not part:
+                continue
+
+            # Audio data must be Base64-encoded for JSON transport
+            is_audio = part.inline_data and part.inline_data.mime_type.startswith("audio/pcm")
+            if is_audio:
+                audio_data = part.inline_data and part.inline_data.data
+                if audio_data:
                     message = {
-                        "turn_complete": event.turn_complete,
-                        "interrupted": event.interrupted,
+                        "mime_type": "audio/pcm",
+                        "data": base64.b64encode(audio_data).decode("ascii")
                     }
                     await websocket.send_text(json.dumps(message))
-                    print(f"[AGENT TO CLIENT]: {message}")
+                    print(f"[AGENT TO CLIENT]: audio/pcm: {len(audio_data)} bytes.")
                     continue
 
-                # Read the Content and its first Part
-                part: Part = (
-                    event.content and event.content.parts and event.content.parts[0]
-                )
-                if not part:
-                    continue
-
-                # Audio data must be Base64-encoded for JSON transport
-                is_audio = part.inline_data and part.inline_data.mime_type.startswith("audio/pcm")
-                if is_audio:
-                    audio_data = part.inline_data and part.inline_data.data
-                    if audio_data:
-                        message = {
-                            "mime_type": "audio/pcm",
-                            "data": base64.b64encode(audio_data).decode("ascii")
-                        }
-                        await websocket.send_text(json.dumps(message))
-                        print(f"[AGENT TO CLIENT]: audio/pcm: {len(audio_data)} bytes.")
-                        continue
-
-                # If it's text and a partial text, send it
-                if part.text and event.partial:
-                    message = {
-                        "mime_type": "text/plain",
-                        "data": part.text
-                    }
-                    await websocket.send_text(json.dumps(message))
-                    print(f"[AGENT TO CLIENT]: text/plain: {message}")
+            # If it's text and a partial text, send it (for cascade audio models or text mode)
+            if part.text and event.partial:
+                message = {
+                    "mime_type": "text/plain",
+                    "data": part.text
+                }
+                await websocket.send_text(json.dumps(message))
+                print(f"[AGENT TO CLIENT]: text/plain: {message}")
     except WebSocketDisconnect:
         print("Client disconnected from agent_to_client_messaging")
     except Exception as e:
@@ -456,12 +497,31 @@ This asynchronous function streams ADK agent events to the WebSocket client.
 
 **Logic:**
 1.  Iterates through `live_events` from the agent.
-2.  **Turn Completion/Interruption:** Sends status flags to the client.
-3.  **Content Processing:**
+2.  **Turn Completion/Interruption:** Sends status flags to the client (see explanation below).
+3.  **Audio Transcription (Native Audio Models):** If the event contains output audio transcription text, sends it to the client with an `is_transcript` flag: `{ "mime_type": "text/plain", "data": "<transcript_text>", "is_transcript": True }`. This enables displaying the audio content as text in the UI.
+4.  **Content Processing:**
     *   Extracts the first `Part` from event content.
     *   **Audio Data:** If audio (PCM), Base64 encodes and sends it as JSON: `{ "mime_type": "audio/pcm", "data": "<base64_audio>" }`.
-    *   **Text Data:** If partial text, sends it as JSON: `{ "mime_type": "text/plain", "data": "<partial_text>" }`.
-4.  Logs messages.
+    *   **Text Data (Cascade Audio Models or Text Mode):** If partial text, sends it as JSON: `{ "mime_type": "text/plain", "data": "<partial_text>" }`.
+5.  Logs messages.
+
+**Understanding Turn Completion and Interruption Events:**
+
+These events are critical for managing bidirectional streaming conversations:
+
+- **`turn_complete`**: Signals that the agent has finished generating a complete response. This event:
+  - Marks the end of the agent's response turn
+  - Allows the UI to prepare for the next conversation turn
+  - Helps manage conversation state and flow
+  - In the UI: Resets `currentMessageId` to `null` so the next agent response creates a new message element
+
+- **`interrupted`**: Signals that the agent's response was interrupted (e.g., when the user starts speaking during the agent's audio response). This event:
+  - Indicates the current agent turn was cut short
+  - Enables natural conversation flow where users can interrupt the agent
+  - In the UI: Stops audio playback immediately by sending `{ command: "endOfAudio" }` to the audio player worklet
+  - Prevents the agent from continuing to speak while the user is talking
+
+Both events are handled silently in the UI without visual indicators, prioritizing a seamless conversational experience.
 
 #### `client_to_agent_messaging(websocket, live_request_queue)`
 
@@ -563,13 +623,21 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int, is_audio: str):
         client_to_agent_messaging(websocket, live_request_queue)
     )
 
-    # Wait for either task to complete (connection close or error)
-    tasks = [agent_to_client_task, client_to_agent_task]
-    await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+    try:
+        # Wait for either task to complete (connection close or error)
+        tasks = [agent_to_client_task, client_to_agent_task]
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
 
-    # Clean up resources
-    live_request_queue.close()
-    print(f"Client #{user_id} disconnected")
+        # Check for errors in completed tasks
+        for task in done:
+            if task.exception() is not None:
+                print(f"Task error for client #{user_id}: {task.exception()}")
+                import traceback
+                traceback.print_exception(type(task.exception()), task.exception(), task.exception().__traceback__)
+    finally:
+        # Clean up resources (always runs, even if asyncio.wait fails)
+        live_request_queue.close()
+        print(f"Client #{user_id} disconnected")
 
 ```
 
@@ -581,8 +649,11 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int, is_audio: str):
     *   **Connection Handling:**
         1.  Accepts WebSocket connection.
         2.  Calls `start_agent_session()` using `user_id` and `is_audio`.
-        3.  **Concurrent Messaging Tasks:** Creates and runs `agent_to_client_messaging` and `client_to_agent_messaging` concurrently using `asyncio.gather`. These tasks handle bidirectional message flow.
-        4.  Logs client connection and disconnection.
+        3.  **Concurrent Messaging Tasks:** Creates and runs `agent_to_client_messaging` and `client_to_agent_messaging` concurrently using `asyncio.wait`. These tasks handle bidirectional message flow.
+        4.  **Error Handling:** Uses a try-finally block to:
+            *   Check completed tasks for exceptions and log detailed error information with traceback
+            *   Ensure `live_request_queue.close()` is always called in the `finally` block for proper cleanup
+        5.  Logs client connection and disconnection.
 
 ### How It Works (Overall Flow)
 
@@ -657,6 +728,18 @@ function connectWebsocket() {
       message_from_server.turn_complete == true
     ) {
       currentMessageId = null;
+      return;
+    }
+
+    // Check for interrupt message
+    if (
+      message_from_server.interrupted &&
+      message_from_server.interrupted === true
+    ) {
+      // Stop audio playback if it's playing
+      if (audioPlayerNode) {
+        audioPlayerNode.port.postMessage({ command: "endOfAudio" });
+      }
       return;
     }
 
@@ -745,7 +828,8 @@ function base64ToArray(base64) {
 *   **Connection Setup:** Generates `sessionId`, constructs `ws_url`. `is_audio` flag (initially `false`) appends `?is_audio=true` to URL when active. `connectWebsocket()` initializes the connection.
 *   **`websocket.onopen`**: Enables send button, updates UI, calls `addSubmitHandler()`.
 *   **`websocket.onmessage`**: Parses incoming JSON from server.
-    *   **Turn Completion:** Resets `currentMessageId` if agent turn is complete.
+    *   **Turn Completion:** Resets `currentMessageId` to `null` when agent turn is complete, preparing for the next response.
+    *   **Interruption:** Stops audio playback by sending `{ command: "endOfAudio" }` to `audioPlayerNode` when the agent is interrupted (e.g., user starts speaking).
     *   **Audio Data (`audio/pcm`):** Decodes Base64 audio (`base64ToArray()`) and sends to `audioPlayerNode` for playback.
     *   **Text Data (`text/plain`):** If new turn (`currentMessageId` is null), creates new `<p>`. Appends received text to the current message paragraph for streaming effect. Scrolls `messagesDiv`.
 *   **`websocket.onclose`**: Disables send button, updates UI, attempts auto-reconnection after 5s.

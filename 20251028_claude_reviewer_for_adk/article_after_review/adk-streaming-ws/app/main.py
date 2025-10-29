@@ -30,7 +30,7 @@ from google.genai.types import (
 
 from google.adk.runners import Runner
 from google.adk.agents import LiveRequestQueue
-from google.adk.agents.run_config import RunConfig
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 
 from fastapi import FastAPI, WebSocket
@@ -85,6 +85,7 @@ async def start_agent_session(user_id, is_audio=False):
     # Enable session resumption for improved reliability
     # For audio mode, enable output transcription to get text for UI display
     run_config = RunConfig(
+        streaming_mode=StreamingMode.BIDI,
         response_modalities=[modality],
         session_resumption=types.SessionResumptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig() if is_audio else None,
