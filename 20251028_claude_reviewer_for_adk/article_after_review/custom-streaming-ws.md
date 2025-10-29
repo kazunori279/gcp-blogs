@@ -306,21 +306,29 @@ async def start_agent_session(user_id, is_audio=False):
     """Starts an agent session"""
 
     # Get or create session (recommended pattern for production)
+    session_id = f"{APP_NAME}_{user_id}"
     session = await runner.session_service.get_session(
         app_name=APP_NAME,
         user_id=user_id,
+        session_id=session_id,
     )
     if not session:
         session = await runner.session_service.create_session(
             app_name=APP_NAME,
             user_id=user_id,
+            session_id=session_id,
         )
 
     # Configure response format based on client preference
     # IMPORTANT: You must choose exactly ONE modality per session
     # Either ["TEXT"] for text responses OR ["AUDIO"] for voice responses
     # You cannot use both modalities simultaneously in the same session
-    modality = "AUDIO" if is_audio else "TEXT"
+
+    # Force AUDIO modality for native audio models regardless of client preference
+    model_name = root_agent.model if isinstance(root_agent.model, str) else root_agent.model.model
+    is_native_audio = "native-audio" in model_name.lower()
+
+    modality = "AUDIO" if (is_audio or is_native_audio) else "TEXT"
 
     # Enable session resumption for improved reliability
     # For audio mode, enable output transcription to get text for UI display
@@ -328,7 +336,7 @@ async def start_agent_session(user_id, is_audio=False):
         streaming_mode=StreamingMode.BIDI,
         response_modalities=[modality],
         session_resumption=types.SessionResumptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig() if is_audio else None,
+        output_audio_transcription=types.AudioTranscriptionConfig() if (is_audio or is_native_audio) else None,
     )
 
     # Create LiveRequestQueue in async context (recommended best practice)

@@ -66,21 +66,29 @@ async def start_agent_session(user_id, is_audio=False):
     """Starts an agent session"""
 
     # Get or create session (recommended pattern for production)
+    session_id = f"{APP_NAME}_{user_id}"
     session = await runner.session_service.get_session(
         app_name=APP_NAME,
         user_id=user_id,
+        session_id=session_id,
     )
     if not session:
         session = await runner.session_service.create_session(
             app_name=APP_NAME,
             user_id=user_id,
+            session_id=session_id,
         )
 
     # Configure response format based on client preference
     # IMPORTANT: You must choose exactly ONE modality per session
     # Either ["TEXT"] for text responses OR ["AUDIO"] for voice responses
     # You cannot use both modalities simultaneously in the same session
-    modality = "AUDIO" if is_audio else "TEXT"
+
+    # Force AUDIO modality for native audio models regardless of client preference
+    model_name = root_agent.model if isinstance(root_agent.model, str) else root_agent.model.model
+    is_native_audio = "native-audio" in model_name.lower()
+
+    modality = "AUDIO" if (is_audio or is_native_audio) else "TEXT"
 
     # Enable session resumption for improved reliability
     # For audio mode, enable output transcription to get text for UI display
@@ -88,7 +96,7 @@ async def start_agent_session(user_id, is_audio=False):
         streaming_mode=StreamingMode.BIDI,
         response_modalities=[modality],
         session_resumption=types.SessionResumptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig() if is_audio else None,
+        output_audio_transcription=types.AudioTranscriptionConfig() if (is_audio or is_native_audio) else None,
     )
 
     # Create LiveRequestQueue in async context (recommended best practice)
@@ -110,16 +118,6 @@ async def agent_to_client_messaging(websocket, live_events):
     try:
         async for event in live_events:
 
-            # If the turn complete or interrupted, send it
-            if event.turn_complete or event.interrupted:
-                message = {
-                    "turn_complete": event.turn_complete,
-                    "interrupted": event.interrupted,
-                }
-                await websocket.send_text(json.dumps(message))
-                print(f"[AGENT TO CLIENT]: {message}")
-                continue
-
             # Handle output audio transcription for native audio models
             # This provides text representation of audio output for UI display
             if event.output_transcription and event.output_transcription.text:
@@ -138,30 +136,36 @@ async def agent_to_client_messaging(websocket, live_events):
             part: Part = (
                 event.content and event.content.parts and event.content.parts[0]
             )
-            if not part:
-                continue
+            if part:
+                # Audio data must be Base64-encoded for JSON transport
+                is_audio = part.inline_data and part.inline_data.mime_type.startswith("audio/pcm")
+                if is_audio:
+                    audio_data = part.inline_data and part.inline_data.data
+                    if audio_data:
+                        message = {
+                            "mime_type": "audio/pcm",
+                            "data": base64.b64encode(audio_data).decode("ascii")
+                        }
+                        await websocket.send_text(json.dumps(message))
+                        print(f"[AGENT TO CLIENT]: audio/pcm: {len(audio_data)} bytes.")
 
-            # Audio data must be Base64-encoded for JSON transport
-            is_audio = part.inline_data and part.inline_data.mime_type.startswith("audio/pcm")
-            if is_audio:
-                audio_data = part.inline_data and part.inline_data.data
-                if audio_data:
+                # If it's text and a partial text, send it (for cascade audio models or text mode)
+                if part.text and event.partial:
                     message = {
-                        "mime_type": "audio/pcm",
-                        "data": base64.b64encode(audio_data).decode("ascii")
+                        "mime_type": "text/plain",
+                        "data": part.text
                     }
                     await websocket.send_text(json.dumps(message))
-                    print(f"[AGENT TO CLIENT]: audio/pcm: {len(audio_data)} bytes.")
-                    continue
+                    print(f"[AGENT TO CLIENT]: text/plain: {message}")
 
-            # If it's text and a partial text, send it (for cascade audio models or text mode)
-            if part.text and event.partial:
+            # If the turn complete or interrupted, send it
+            if event.turn_complete or event.interrupted:
                 message = {
-                    "mime_type": "text/plain",
-                    "data": part.text
+                    "turn_complete": event.turn_complete,
+                    "interrupted": event.interrupted,
                 }
                 await websocket.send_text(json.dumps(message))
-                print(f"[AGENT TO CLIENT]: text/plain: {message}")
+                print(f"[AGENT TO CLIENT]: {message}")
     except WebSocketDisconnect:
         print("Client disconnected from agent_to_client_messaging")
     except Exception as e:
