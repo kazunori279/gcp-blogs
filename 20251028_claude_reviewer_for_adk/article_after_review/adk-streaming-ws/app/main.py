@@ -21,6 +21,9 @@ import warnings
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Load environment variables BEFORE importing the agent
+load_dotenv()
+
 from google.genai import types
 from google.genai.types import (
     Part,
@@ -45,9 +48,6 @@ warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 #
 # ADK Streaming
 #
-
-# Load environment variables
-load_dotenv()
 
 # Application configuration
 APP_NAME = "adk-streaming-ws"
