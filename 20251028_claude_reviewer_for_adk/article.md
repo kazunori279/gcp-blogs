@@ -2,6 +2,8 @@
 
 As a developer advocate, I've always faced a challenge: how do you maintain high-quality technical documentation that's technically accurate, well-written, and consistent with the latest updates? Recently, I discovered a powerful approach using [Claude Code](https://docs.claude.com/en/docs/claude-code)'s subagents and agent skills that transformed my workflow.
 
+![Ernest and agent](assets/ernest-and-agent.png)
+
 ## The Challenge: Updating a Complex Technical Article
 
 I recently needed to update my article on writing a custom application with [ADK Bidi-streaming](https://google.github.io/adk-docs/streaming/) for the latest version of the ADK:
