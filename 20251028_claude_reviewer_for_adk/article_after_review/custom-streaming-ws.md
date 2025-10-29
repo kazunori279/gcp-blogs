@@ -73,6 +73,8 @@ To run the sample app, choose a platform from either Google AI Studio or Google 
         ```env title=".env"
         GOOGLE_GENAI_USE_VERTEXAI=FALSE
         GOOGLE_API_KEY=PASTE_YOUR_ACTUAL_API_KEY_HERE
+        DEMO_AGENT_MODEL=gemini-2.5-flash-native-audio-preview-09-2025
+        #DEMO_AGENT_MODEL=gemini-2.0-flash-exp # if the model above doesn't work
         ```
 
     3. Replace `PASTE_YOUR_ACTUAL_API_KEY_HERE` with your actual `API KEY`.
@@ -95,6 +97,8 @@ To run the sample app, choose a platform from either Google AI Studio or Google 
         GOOGLE_GENAI_USE_VERTEXAI=TRUE
         GOOGLE_CLOUD_PROJECT=PASTE_YOUR_ACTUAL_PROJECT_ID
         GOOGLE_CLOUD_LOCATION=us-central1
+        DEMO_AGENT_MODEL=gemini-live-2.5-flash-preview-native-audio-09-2025
+        #DEMO_AGENT_MODEL=gemini-2.0-flash-exp # if the model above doesn't work
         ```
 
 
@@ -104,13 +108,13 @@ The agent definition code `agent.py` in the `google_search_agent` folder is wher
 
 
 ```py
+import os
 from google.adk.agents import Agent
 from google.adk.tools import google_search  # Import the tool
 
 root_agent = Agent(
    name="google_search_agent",
-   model="gemini-2.0-flash-exp", # if this model does not work, try below
-   #model="gemini-2.0-flash-live-001",
+   model=os.getenv("DEMO_AGENT_MODEL"),
    description="Agent to answer questions using Google Search.",
    instruction="Answer the question using the Google Search tool.",
    tools=[google_search],
@@ -122,7 +126,7 @@ root_agent = Agent(
 - [Gemini Live API - Supported Models](https://ai.google.dev/gemini-api/docs/live#supported-models)
 - [Vertex AI Live API - Model Support](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api#models)
 
-This quickstart utilizes the `gemini-2.0-flash-exp` model for demonstration purposes, which supports Live API functionality.
+The agent uses the model specified in the `DEMO_AGENT_MODEL` environment variable (from the `.env` file).
 
 Notice how easily you integrated [grounding with Google Search](https://ai.google.dev/gemini-api/docs/grounding?lang=python#configure-search) capabilities.  The `Agent` class and the `google_search` tool handle the complex interactions with the LLM and grounding with the search API, allowing you to focus on the agent's *purpose* and *behavior*.
 
@@ -181,7 +185,7 @@ These console logs are important in case you develop your own streaming applicat
 6. **Troubleshooting tips**
 
 - **When `ws://` doesn't work:** If you see any errors on the Chrome DevTools with regard to `ws://` connection, try replacing `ws://` with `wss://` on `app/static/js/app.js` at line 28. This may happen when you are running the sample on a cloud environment and using a proxy connection to connect from your browser.
-- **When `gemini-2.0-flash-exp` model doesn't work:** If you see any errors on the app server console with regard to `gemini-2.0-flash-exp` model availability, try replacing it with `gemini-2.0-flash-live-001` on `app/google_search_agent/agent.py` at line 6.
+- **When the model doesn't work:** If you see any errors on the app server console with regard to model availability, try using the alternative model by uncommenting the `#DEMO_AGENT_MODEL=gemini-2.0-flash-exp` line in your `.env` file and commenting out the current `DEMO_AGENT_MODEL` line.
 
 ## 4. Server code overview {#4-server-side-code-overview}
 
