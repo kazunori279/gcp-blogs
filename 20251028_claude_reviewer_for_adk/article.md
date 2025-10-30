@@ -1,8 +1,10 @@
 # Supercharge Tech Writing with Claude Code Subagents and Agent Skills
 
-As a developer advocate, I've always faced a challenge: how do you maintain high-quality technical documentation that's technically accurate, well-written, and consistent with the latest updates? Recently, I discovered a powerful approach using [Claude Code](https://docs.claude.com/en/docs/claude-code)'s subagents and agent skills that transformed my workflow.
+As a developer advocate, I've always faced a challenge: how do you maintain high-quality technical documentation that's technically accurate, well-written and formated, and consistent with the latest updates? Recently, I discovered a powerful approach using [Claude Code](https://docs.claude.com/en/docs/claude-code)'s subagents and agent skills that transformed my workflow.
 
 ![Ernest and agent](assets/ernest-and-agent.png)
+<p align="center"><em>Papa H. vs the Agentic Editor:<br>A New Kind of Literary Bullfight</em></p>
+
 
 ## The Challenge: Updating a Complex Technical Article
 
@@ -13,10 +15,9 @@ I recently needed to update my article on writing a custom application with [ADK
 
 This wasn't just about fixing a few typos - I needed to:
 
-- Update all code snippets to match the latest ADK API
 - Improve the writing quality and consistency
 - Ensure code examples followed best practices
-- Verify technical accuracy against the latest SDK implementation
+- Verify technical consistency against the latest SDK implementation
 
 This seemingly simple task revealed the core challenges of high-quality technical writing.
 
