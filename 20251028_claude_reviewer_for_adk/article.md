@@ -1,4 +1,4 @@
-# Supercharge Tech Writing with Claude Code Subagents and Agent Skills
+# Supercharge Your Tech Writing with Claude Code Subagents and Agent Skills
 
 As a developer advocate, I've always faced a challenge: how do you maintain high-quality technical documentation that's technically accurate, well-written and formated, and consistent with the latest updates? Recently, I discovered a powerful approach using [Claude Code](https://docs.claude.com/en/docs/claude-code)'s subagents and agent skills that transformed my workflow.
 
