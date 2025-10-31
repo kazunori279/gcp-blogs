@@ -5,15 +5,14 @@ As a developer advocate, I've always faced a challenge: how do you maintain high
 ![Ernest and agent](assets/ernest-and-agent.png)
 <p align="center"><em>Papa H. vs the Agentic Editor:<br>A New Kind of Literary Bullfight</em></p>
 
-
 ## The Challenge: Updating a Complex Technical Article
 
-I recently needed to update my article on writing a custom application with [ADK Bidi-streaming](https://google.github.io/adk-docs/streaming/) for the latest version of the ADK:
+I recently needed to update the article [Custom audio streaming app with ADK Bidi-streaming](https://google.github.io/adk-docs/streaming/custom-streaming-ws/) on the [ADK official document site](https://google.github.io/adk-docs/) that I wrote while ago:
 
-![The old version of the article](assets/article_before_review.png)
-<p align="center"><em>The old version of the article (<a link="assets/article_old.pdf">PDF</a>)</em></p>
+![Article](assets/article_after_review.png)
+<p align="center"><em>The article: <a link="https://google.github.io/adk-docs/streaming/custom-streaming-ws/">Custom audio streaming app with ADK Bidi-streaming</a></em></p>
 
-This wasn't just about fixing a few typos - I needed to:
+This wasn't just about fixing a few typos - I wanted to:
 
 - Improve the writing quality and consistency
 - Ensure code examples followed best practices
@@ -407,9 +406,9 @@ What impressed me most about the `adk-reviewer` agent is that it digs deep into 
 
 #### Example 4: Deep Dive into Streaming Behavior
 
-Just like having a human subject matter expert as your reviewer, you can also have interactive deep-dive research and discussion with Claude Code to gain a better understanding of the essential problem and build a practical solution. 
+Just like having a human subject matter expert as your reviewer, you can also have interactive deep-dive research and discussion with Claude Code to gain a better understanding of the essential problem and build a practical solution.
 
-In this example, the `adk-reviewer` agent pointed out an issue where the original sample code was only using the partial texts from the agent and ignoring the complete text:
+In this example, the `adk-reviewer` agent pointed out an issue where the original sample code was only using the partial (incremental) texts from the agent and ignoring the complete text:
 
 > **W2: Incomplete Event Handling for Audio Streaming**
 >
@@ -435,45 +434,8 @@ In this example, the `adk-reviewer` agent pointed out an issue where the origina
 > **Reason:**
 >
 > The code only sends text when `event.partial` is `True`, but complete text messages (where `event.partial` is `False`) are not sent. This means the final text of a response might not be transmitted to the client.
->
-> **Recommended Options:**
->
-> **O1: Handle both partial and complete text events**
->
-> ```python
-> # If it's text, send it (both partial and complete)
-> if part.text:
->     message = {
->         "mime_type": "text/plain",
->         "data": part.text
->     }
->     await websocket.send_text(json.dumps(message))
->     print(f"[AGENT TO CLIENT]: text/plain: {message} (partial={event.partial})")
-> ```
->
-> **O2: Add explicit handling for complete text**
->
-> ```python
-> # If it's text and a partial text, send it
-> if part.text and event.partial:
->     message = {
->         "mime_type": "text/plain",
->         "data": part.text
->     }
->     await websocket.send_text(json.dumps(message))
->     print(f"[AGENT TO CLIENT]: text/plain (partial): {message}")
->
-> # If it's text and complete, send it
-> elif part.text and not event.partial:
->     message = {
->         "mime_type": "text/plain",
->         "data": part.text
->     }
->     await websocket.send_text(json.dumps(message))
->     print(f"[AGENT TO CLIENT]: text/plain (complete): {message}")
-> ```
 
-But I wasn't sure about either O1 or O2. If we send both partial and complete text to the client, wouldn't it be duplicated on the UI? So, instead of just choosing a fix option, I started a discussion with Claude Code.
+But I wasn't sure about this. If we send both partial and complete text to the client, it needs to handle the duplication between them. But at the same time, We don't want to lose any texts from the agent. So, instead of just choosing a fix option, I started a discussion with Claude Code.
 
 **My Prompt**:
 > "For W2, is it possible that the partial=True text event could lose final text chunk? Check with the `google-adk` skill."
@@ -483,73 +445,42 @@ As mentioned earlier, I have defined `google-adk` skill on this Claude Code, so 
 After a few minutes of research, Claude Code responded:
 
 **Claude Code Response**:
-```
-Perfect! The comment at lines 122-123 confirms: "The text should not partial and
-the returned LlmResponse is not be partial."
 
-So the flow for run_live() with TEXT mode is:
+```text
+Yes, concatenating all texts with partial=True will give you exactly the same text as the final 
+aggregated response with partial=False (or no partial field).
 
-1. Multiple events with partial=True - Each contains a text chunk
-2. ONE final event with partial=None/False - Contains the COMPLETE accumulated text
-3. ONE turn_complete event - Signals the turn is done
+Here's how it works according to adk-python/src/google/adk/utils/streaming_utils.py:
 
-This means W2 is CORRECT - we need to handle both partial and complete text events.
-However, since the final complete text contains ALL the text already sent in
-partials, we should be careful about duplication.
+1. Partial responses (partial=True): When streaming text, each chunk gets accumulated in internal 
+buffers (self._text and self._thought_text at lines 61-63):
 
-Based on my thorough analysis of the ADK source code, W2 is correct but needs
-refinement. Here's what I found:
+   if part0.thought:
+      self._thought_text += part0.text
+   else:
+      self._text += part0.text
+   llm_response.partial = True
 
-Critical Finding
+2. Final aggregated response (no partial or partial=False): When the stream completes or encounters 
+a non-text event, the aggregator yields a response with ALL accumulated text (lines 71-79):
 
-The current code pattern in the article (and in the official ADK examples) DOES
-miss the final complete text event. However, this may or may not be a problem
-depending on the use case.
+   parts = []
+   if self._thought_text:
+      parts.append(types.Part(text=self._thought_text, thought=True))
+   if self._text:
+      parts.append(types.Part.from_text(text=self._text))
+   yield LlmResponse(
+      content=types.ModelContent(parts=parts),
+      usage_metadata=llm_response.usage_metadata,
+   )
 
-How ADK Text Streaming Works (run_live() mode)
-
-From gemini_llm_connection.py:145-189:
-
-1. Partial events (partial=True): Individual text chunks as they arrive
-2. Complete event (partial=False/None): Final event with COMPLETE ACCUMULATED TEXT
-3. Turn complete event: Signals the end of the turn
-
-The Issue
-
-The current pattern only sends partial=True events, which misses the final complete
-text event that contains the full accumulated response.
-
-However, There's a Nuance
-
-Since the complete event contains text that was already sent incrementally via
-partial events, sending it would cause duplication on the client side. The current
-pattern actually avoids duplication by only showing the streaming chunks.
-
-Recommendation for the Article
-
-Option 1: Keep current behavior but document it (Recommended)
-
-The current code is actually intentional to avoid duplication. Add a comment
-explaining this:
-
-# If it's text and a partial text, send it for streaming display
-# Note: We only send partial=True events to show incremental streaming.
-# A final event with partial=False containing the complete text is also
-# sent by ADK, but we skip it here to avoid duplication since the client
-# has already received all chunks via partial events.
-if part.text and event.partial:
-    message = {
-        "mime_type": "text/plain",
-        "data": part.text
-    }
-    await websocket.send_text(json.dumps(message))
-
-My recommendation: Use Option 1 - the current code avoids duplication and works
-correctly for streaming. Just add documentation to explain why only partial=True
-is handled.
+The final response is simply the concatenation of all the partial text chunks. There's no 
+modification, formatting, or additional processing - it's a direct string accumulation using. 
 ```
 
-This is remarkable. With this interactive session, Claude Code was able to understand the situation at a higher resolution and suggested practical actions we could choose.
+Now we confirmed that the partial text will not lose any texts from the agent, at the ADK source code level.
+
+This is remarkable. With this interactive session, Claude Code was able to understand the situation at a higher resolution and provide a deeper, interactive review process.
 
 #### Other ADK Review Examples
 
