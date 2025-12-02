@@ -1,272 +1,303 @@
-# ADK Bidi-Streaming Cheatsheet: A Visual Guide to Real-Time Multimodal AI Agent Development
+# ADK Bidi-Streaming: A Visual Guide to Real-Time Multimodal AI Agent Development
 
-Google recently published a comprehensive 5-part developer guide for building real-time voice and video AI applications with the [Agent Development Kit (ADK)](https://google.github.io/adk-docs/). The [ADK Bidi-streaming Developer Guide](https://google.github.io/adk-docs/streaming/dev-guide/part1/) covers everything from architecture fundamentals to production deployment:
+Building real-time voice AI is hard. You need WebSocket connections that stay alive, audio streaming that doesn't lag, interruption handling that feels natural, and session state that persists across reconnections. The complexity adds up fast—what should take weeks often stretches into months of infrastructure work.
 
-- **[Part 1: Introduction to ADK Bidi-streaming](https://google.github.io/adk-docs/streaming/dev-guide/part1/)** — Architecture overview, Live API platforms, and the 4-phase application lifecycle
-- **[Part 2: Sending Messages with LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/)** — Upstream flow for text, audio, video, and activity signals
-- **[Part 3: Event Handling with run_live()](https://google.github.io/adk-docs/streaming/dev-guide/part3/)** — Downstream events, tool execution, and multi-agent workflows
-- **[Part 4: Understanding RunConfig](https://google.github.io/adk-docs/streaming/dev-guide/part4/)** — Session management, quotas, and production controls
-- **[Part 5: How to Use Audio, Image and Video](https://google.github.io/adk-docs/streaming/dev-guide/part5/)** — Multimodal capabilities, model architectures, and advanced features
+What if you could skip all that plumbing and focus on what actually matters: your agent's behavior and your users' experience?
 
-The guide also includes a working demo application—a FastAPI-based WebSocket server with a web UI that showcases the complete streaming lifecycle:
+That's exactly what Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) delivers. The newly published [ADK Bidi-streaming Developer Guide](https://google.github.io/adk-docs/streaming/dev-guide/part1/) is a comprehensive 5-part series that takes you from architecture fundamentals to production deployment:
+
+| Part | Focus | What You'll Learn |
+|------|-------|-------------------|
+| [Part 1](https://google.github.io/adk-docs/streaming/dev-guide/part1/) | Foundation | Architecture, Live API platforms, 4-phase lifecycle |
+| [Part 2](https://google.github.io/adk-docs/streaming/dev-guide/part2/) | Upstream | Sending text, audio, video via LiveRequestQueue |
+| [Part 3](https://google.github.io/adk-docs/streaming/dev-guide/part3/) | Downstream | Event handling, tool execution, multi-agent workflows |
+| [Part 4](https://google.github.io/adk-docs/streaming/dev-guide/part4/) | Configuration | Session management, quotas, production controls |
+| [Part 5](https://google.github.io/adk-docs/streaming/dev-guide/part5/) | Multimodal | Audio specs, model architectures, advanced features |
+
+The guide also includes a complete working demo—a FastAPI WebSocket server with a web UI that you can run locally and experiment with:
 
 ![ADK Bidi-streaming Demo](assets/bidi-demo-screen.png)
 
-**[bidi-demo](https://github.com/google/adk-samples/tree/main/python/agents/bidi-demo)**: Real-time bidirectional streaming with text, audio, and image input, automatic transcription, and Google Search integration.
+**[Try the bidi-demo →](https://github.com/google/adk-samples/tree/main/python/agents/bidi-demo)**
 
-In this post, we provide a visual summary of the key concepts as a cheatsheet for ADK Bidi-streaming development, so that you can quickly grasp the breadth and depth of ADK Bidi-streaming functionalities.
+This post distills the guide into a visual cheatsheet. Each infographic captures a core concept, with enough context to understand the "why" behind the architecture decisions.
+
+---
 
 ## Understanding the Architecture
 
-The first step to mastering ADK Bidi-streaming is understanding how the pieces connect. The architecture follows a clear [separation of concerns](https://google.github.io/adk-docs/streaming/dev-guide/part1/#14-adk-bidi-streaming-architecture-overview) across three domains.
+Before diving into code, you need a mental model of how the pieces connect. ADK Bidi-streaming follows a clean [separation of concerns](https://google.github.io/adk-docs/streaming/dev-guide/part1/#14-adk-bidi-streaming-architecture-overview) across three layers, each with distinct responsibilities.
 
 ![ADK Bidi-streaming High-Level Architecture](assets/Bidi_arch.jpeg)
 
-This architecture diagram reveals the elegant layering that makes ADK powerful:
+**You own the application layer.** This includes the client applications your users interact with (web, mobile, kiosk) and the transport server that manages connections. Most teams use [FastAPI](https://fastapi.tiangolo.com/) with WebSockets, but any framework supporting real-time communication works. You also define your [Agent](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-agent)—the instructions, tools, and behaviors that make your AI unique.
 
-**Developer Provided (Application Layer)**: You build and own the client applications (web, mobile) and the transport layer (WebSocket/SSE server using frameworks like FastAPI). You also define your [Agent](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-agent) with custom instructions, tools, and behaviors.
+**ADK handles the orchestration.** The framework provides three key components that eliminate infrastructure work. [LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/) buffers and sequences incoming messages so you don't worry about race conditions. [Runner](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-runner) manages session lifecycles and conversation state. And the internal LLM Flow handles the complex protocol translation you never want to write yourself.
 
-**ADK Provided (Framework Layer)**: ADK handles the complex orchestration through four key components:
-- **[LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/)**: Buffers and sequences incoming user messages
-- **[Runner](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-runner)**: Orchestrates agent sessions and manages conversation state
-- **LLM Flow**: Manages the processing pipeline (internal, not directly used)
+**Google provides the AI backbone.** The [Live API](https://google.github.io/adk-docs/streaming/dev-guide/part1/#12-gemini-live-api-and-vertex-ai-live-api)—available through [Gemini Live API](https://ai.google.dev/gemini-api/docs/live) for rapid prototyping or [Vertex AI Live API](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api) for enterprise production—delivers real-time, low-latency AI processing with built-in support for audio, video, and [natural interruptions](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-interrupted-flag).
 
-**Google Provided (AI Services)**: The [Live API](https://google.github.io/adk-docs/streaming/dev-guide/part1/#12-gemini-live-api-and-vertex-ai-live-api) (either [Gemini Live API](https://ai.google.dev/gemini-api/docs/live) via AI Studio or [Vertex AI Live API](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api) via Google Cloud) provides real-time, low-latency AI processing.
+> **Why this matters:** The bidirectional arrows in the diagram aren't just decoration—they represent true concurrent communication. Users can interrupt the AI mid-sentence, just like in human conversation. This is fundamentally different from request-response APIs, and it's what makes voice AI feel natural rather than robotic.
 
-The arrows in the diagram show the bidirectional flow—messages travel from client through ADK to the Live API, while responses stream back in real-time. This concurrent two-way communication is what enables natural, [interruption-capable conversations](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-interrupted-flag).
+---
 
 ## Why ADK Over Raw Live API?
 
-If you've worked with the raw Gemini Live API directly, you know the implementation burden. This comparison makes the [value proposition](https://google.github.io/adk-docs/streaming/dev-guide/part1/#13-adk-bidi-streaming-for-building-realtime-agent-applications) crystal clear.
+Now that you understand where the pieces fit, the natural question is: why use ADK instead of building directly on the Live API? After all, the underlying Gemini API is well-documented.
+
+The answer becomes viscerally clear when you compare the two approaches side-by-side.
 
 ![Raw Live API vs. ADK Bidi-streaming](assets/live_vs_adk.png)
 
-The table highlights six critical areas where ADK transforms complexity into simplicity:
+With the raw Live API, you're responsible for everything. Tool execution? You detect function calls, invoke your code, format responses, and send them back—manually coordinating with ongoing audio streams. Connection drops? You implement reconnection logic, cache session handles, and restore state. Session persistence? You design the schema, handle serialization, and manage the storage layer.
+
+**ADK transforms all of this into declarative configuration.** Tools execute automatically in parallel. Connections resume transparently when WebSocket timeouts occur. Sessions persist to your choice of database with zero custom code. Events arrive as typed Pydantic models you can serialize with a single method call.
+
+The [feature comparison](https://google.github.io/adk-docs/streaming/dev-guide/part1/#13-adk-bidi-streaming-for-building-realtime-agent-applications) spans six critical areas:
 
 | Capability | Raw Live API | ADK Bidi-streaming |
 |------------|--------------|-------------------|
-| **Agent Framework** | Build from scratch | Single/multi-agent, tools, evaluation, security |
-| **[Tool Execution](https://google.github.io/adk-docs/streaming/dev-guide/part3/#automatic-tool-execution-in-run_live)** | Manual execution & response handling | Automatic execution & orchestration |
-| **[Connection Management](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-session-resumption)** | Manual reconnection & session resumption | Automatic reconnection & session resumption |
-| **[Event Model](https://google.github.io/adk-docs/streaming/dev-guide/part3/#the-event-class)** | Custom structures & serialization | Unified, typed Event model with metadata |
-| **Async Framework** | Manual coordination & stream handling | [LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/) & [run_live()](https://google.github.io/adk-docs/streaming/dev-guide/part3/) async generator |
-| **[Session Persistence](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-sessionservice)** | Manual implementation | Built-in (SQL, Vertex AI, In-memory) |
+| Agent Framework | Build from scratch | Single/multi-agent with tools, evaluation, security |
+| [Tool Execution](https://google.github.io/adk-docs/streaming/dev-guide/part3/#automatic-tool-execution-in-run_live) | Manual handling | Automatic parallel execution |
+| [Connection Management](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-session-resumption) | Manual reconnection | Transparent session resumption |
+| [Event Model](https://google.github.io/adk-docs/streaming/dev-guide/part3/#the-event-class) | Custom structures | Unified, typed Event objects |
+| Async Framework | Manual coordination | LiveRequestQueue + run_live() generator |
+| [Session Persistence](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-sessionservice) | Manual implementation | Built-in SQL, Vertex AI, or in-memory |
 
-The bottom line: **ADK reduces months of infrastructure development to declarative configuration.** You focus on agent behavior and user experience, not streaming plumbing.
+> **The bottom line:** ADK reduces months of infrastructure development to days of application development. You focus on what your agent does, not how streaming works.
+
+---
 
 ## The Four-Phase Application Lifecycle
 
-Every ADK Bidi-streaming application follows a predictable [four-phase lifecycle](https://google.github.io/adk-docs/streaming/dev-guide/part1/#15-adk-bidi-streaming-application-lifecycle). Understanding these phases helps you structure your code correctly.
+Every ADK Bidi-streaming application follows a predictable [four-phase lifecycle](https://google.github.io/adk-docs/streaming/dev-guide/part1/#15-adk-bidi-streaming-application-lifecycle). Understanding these phases isn't just organizational—it's the key to resource efficiency and clean code architecture.
 
 ![ADK Bidi-streaming Application Lifecycle](assets/app_lifecycle.png)
 
-**[Phase 1: Application Initialization](https://google.github.io/adk-docs/streaming/dev-guide/part1/#phase-1-application-initialization) (Once at Startup)**
+### Phase 1: Application Initialization
 
-When your application starts, you create the foundational components that will be reused across all sessions:
-- **[Create Agent](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-agent)**: Define your AI's model, tools, and instructions
-- **[Create SessionService](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-sessionservice)**: Set up state storage (in-memory for dev, database for production)
-- **[Create Runner](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-runner)**: Initialize the orchestrator that manages sessions
+When your server starts, you create three foundational components that live for the lifetime of the process. First, you [define your Agent](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-agent) with its model, tools, and personality. Then you [create a SessionService](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-sessionservice)—in-memory for development, database-backed for production. Finally, you [initialize the Runner](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-runner) that will orchestrate all sessions.
 
-**[Phase 2: Session Initialization](https://google.github.io/adk-docs/streaming/dev-guide/part1/#phase-2-session-initialization) (Per User Connection)**
+These components are stateless and thread-safe. A single Runner can handle thousands of concurrent users because the per-user state lives elsewhere.
 
-Each time a user connects, you establish their streaming session:
-- **[Get/Create Session](https://google.github.io/adk-docs/streaming/dev-guide/part1/#get-or-create-session)**: Restore context or create fresh conversation
-- **[Create RunConfig](https://google.github.io/adk-docs/streaming/dev-guide/part1/#create-runconfig)**: Configure modalities (audio/text), transcription, and features
-- **[Create LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part1/#create-liverequestqueue)**: Set up the message buffer
-- **Start [run_live()](https://google.github.io/adk-docs/streaming/dev-guide/part3/#how-run_live-works) Event Loop**: Begin bidirectional streaming
+### Phase 2: Session Initialization
 
-**[Phase 3: Bidi-streaming Loop](https://google.github.io/adk-docs/streaming/dev-guide/part1/#phase-3-bidi-streaming-with-run_live-event-loop) (Active Communication)**
+Each time a user connects via WebSocket, you set up their streaming session. You [get or create their Session](https://google.github.io/adk-docs/streaming/dev-guide/part1/#get-or-create-session) to restore conversation history. You [configure RunConfig](https://google.github.io/adk-docs/streaming/dev-guide/part1/#create-runconfig) to specify modalities (audio or text), transcription settings, and features. You [create a fresh LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part1/#create-liverequestqueue) for message buffering. Then you start the [run_live() event loop](https://google.github.io/adk-docs/streaming/dev-guide/part3/#how-run_live-works).
 
-This is where the magic happens—concurrent two-way flow:
-- **Upstream**: Client [sends messages](https://google.github.io/adk-docs/streaming/dev-guide/part1/#send-messages-to-the-agent) through Queue to Agent
-- **Downstream**: Agent [responds through Events](https://google.github.io/adk-docs/streaming/dev-guide/part1/#receive-and-process-events) to Client
-- **[Interruption](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-interrupted-flag)**: Users can interrupt mid-response, just like natural conversation
+### Phase 3: Bidirectional Streaming
 
-**[Phase 4: Terminate Session](https://google.github.io/adk-docs/streaming/dev-guide/part1/#phase-4-terminate-live-api-session) (Connection End)**
+This is where the magic happens. Two concurrent async tasks run simultaneously: the upstream task [sends messages](https://google.github.io/adk-docs/streaming/dev-guide/part1/#send-messages-to-the-agent) from your WebSocket through the queue to the agent, while the downstream task [receives events](https://google.github.io/adk-docs/streaming/dev-guide/part1/#receive-and-process-events) from the agent and forwards them to your client.
 
-Clean shutdown when the session ends:
-- [Close LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/#control-signals) (sends graceful termination signal)
-- Stop run_live() loop
-- Persist session state for future resumption
+The user can speak while the AI is responding. The AI can be [interrupted](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-interrupted-flag) mid-sentence. It's true two-way communication, not alternating monologues.
 
-The arrow from Phase 4 back to Phase 2 shows how users can reconnect and resume conversations—session state persists across connections.
+### Phase 4: Session Termination
+
+When the connection ends—whether the user disconnects, a timeout occurs, or an error happens—you [close the LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/#control-signals). This sends a graceful termination signal, stops the run_live() loop, and ensures session state is persisted for future resumption.
+
+> **Why this matters:** The arrow from Phase 4 back to Phase 2 represents session continuity. When a user reconnects—even days later—their conversation history is restored from the SessionService. The Live API session is ephemeral, but the ADK Session is permanent (as long as you use persistent session stores like SQL or Vertex AI rather than in-memory).
+
+---
 
 ## Upstream Flow: LiveRequestQueue
 
-The upstream path—from your application to the AI—flows through the [LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/#liverequestqueue-and-liverequest). This single interface handles all message types elegantly.
+The path from your application to the AI flows through a single interface: [LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/#liverequestqueue-and-liverequest). Instead of juggling different APIs for text, audio, and control signals, you use one elegant queue that handles everything.
 
 ![ADK Bidi-Streaming: Upstream Flow with LiveRequestQueue](assets/live_req_queue.png)
 
-The diagram shows four input types on the left, each with its corresponding method:
+**Sending text** is straightforward. When a user types a message, you wrap it in a Content object and call [`send_content()`](https://google.github.io/adk-docs/streaming/dev-guide/part2/#send_content-sends-text-with-turn-by-turn). This signals a complete turn to the model, triggering immediate response generation.
 
-| Input Type | Method | LiveRequest Field | Purpose |
-|------------|--------|-------------------|---------|
-| User Text | [`send_content(Content)`](https://google.github.io/adk-docs/streaming/dev-guide/part2/#send_content-sends-text-with-turn-by-turn) | `content: Optional[Content]` | Turn-by-turn text messages |
-| Audio Stream | [`send_realtime(Blob)`](https://google.github.io/adk-docs/streaming/dev-guide/part2/#send_realtime-sends-audio-image-and-video-in-real-time) | `blob: Optional[Blob]` | Real-time audio/video chunks |
-| Activity Signals | [`send_activity_start/end()`](https://google.github.io/adk-docs/streaming/dev-guide/part2/#activity-signals) | `activity_start/end` | Manual turn control (push-to-talk) |
-| Close Signal | [`close()`](https://google.github.io/adk-docs/streaming/dev-guide/part2/#control-signals) | `close: bool = False` | Graceful session termination |
+**Streaming audio** works differently. You call [`send_realtime()`](https://google.github.io/adk-docs/streaming/dev-guide/part2/#send_realtime-sends-audio-image-and-video-in-real-time) with small chunks (50-100ms recommended) continuously as the user speaks. The model processes audio in real-time, using Voice Activity Detection to determine when the user has finished.
 
-**Key Design Principles** (shown at the bottom of the infographic):
-- **Asyncio-based**: Built on Python's asyncio.Queue for non-blocking operations
-- **[Thread-safe within event loop](https://google.github.io/adk-docs/streaming/dev-guide/part2/#concurrency-and-thread-safety)**: Safe for concurrent access from the same thread
-- **[FIFO ordering](https://google.github.io/adk-docs/streaming/dev-guide/part2/#message-ordering-guarantees)**: Messages processed in the order sent
-- **Graceful termination**: close() signals clean shutdown
+**Manual turn control** is available when you need it. If you're building a push-to-talk interface or using client-side VAD, [`send_activity_start()` and `send_activity_end()`](https://google.github.io/adk-docs/streaming/dev-guide/part2/#activity-signals) explicitly signal speech boundaries.
 
-The flow is beautifully simple: your application calls the appropriate method, it's wrapped in a LiveRequest container, and serialized to the Gemini Live API over WebSocket.
+**Graceful shutdown** happens through [`close()`](https://google.github.io/adk-docs/streaming/dev-guide/part2/#control-signals). This tells the Live API to terminate cleanly rather than waiting for a timeout.
+
+The queue is built on Python's asyncio.Queue, which means it's [non-blocking and thread-safe within the event loop](https://google.github.io/adk-docs/streaming/dev-guide/part2/#concurrency-and-thread-safety). Messages are processed in [FIFO order](https://google.github.io/adk-docs/streaming/dev-guide/part2/#message-ordering-guarantees)—what you send first arrives first.
+
+> **💡 Pro tip:** Don't wait for model responses before sending the next audio chunk. The queue handles buffering, and the model expects continuous streaming. Waiting creates awkward pauses in conversation.
+
+---
 
 ## Downstream Flow: The run_live() Method
 
-The downstream path—from the AI back to your application—centers on the [`run_live()`](https://google.github.io/adk-docs/streaming/dev-guide/part3/) async generator. This comprehensive diagram captures everything you need to know.
+The return path—from the AI back to your application—centers on [`run_live()`](https://google.github.io/adk-docs/streaming/dev-guide/part3/). This async generator is the heart of ADK streaming, yielding events in real-time without buffering.
 
 ![Comprehensive Summary of ADK Live Event Handling: The run_live() Method](assets/run_live.png)
 
-**The [run_live() Mechanism](https://google.github.io/adk-docs/streaming/dev-guide/part3/#how-run_live-works)** (left side):
+### How run_live() Works
 
-The method takes three inputs:
-- **Identity**: `user_id` and `session_id` to identify the conversation
-- **Channel**: `live_request_queue` for upstream messages
-- **Configuration**: `run_config` for streaming behavior
+You call it with three inputs: **identity** (user_id and session_id to identify the conversation), **channel** (the LiveRequestQueue for upstream messages), and **configuration** (RunConfig for streaming behavior). The method returns an async generator that yields [Event objects](https://google.github.io/adk-docs/streaming/dev-guide/part3/#the-event-class) as they arrive.
 
-It functions as an async generator, yielding [Event objects](https://google.github.io/adk-docs/streaming/dev-guide/part3/#the-event-class) without buffering—you get responses in real-time as they're generated.
+```python
+async for event in runner.run_live(
+    user_id=user_id,
+    session_id=session_id,
+    live_request_queue=queue,
+    run_config=config
+):
+    # Process each event as it arrives
+    await websocket.send_text(event.model_dump_json())
+```
 
-**[Event Types and Handling](https://google.github.io/adk-docs/streaming/dev-guide/part3/#event-types-and-handling)** (right side):
+### The Seven Event Types
 
-The table shows seven event types you'll encounter:
+Not all events are created equal. Understanding the types helps you build responsive UIs.
 
-| Event Type | Key Fields | Persistence |
-|------------|------------|-------------|
-| [Text Event](https://google.github.io/adk-docs/streaming/dev-guide/part3/#text-events) | `event.content.parts[0].text` | Partial: Not Saved |
-| [Audio Event (Inline)](https://google.github.io/adk-docs/streaming/dev-guide/part3/#audio-events) | `event.content.parts[0].inline_data` | Ephemeral (Never saved) |
-| [Audio Event (File)](https://google.github.io/adk-docs/streaming/dev-guide/part3/#audio-events-with-file-data) | `event.content.parts[0].file_data` | Saved if `save_live_blob=True` |
-| [Transcription](https://google.github.io/adk-docs/streaming/dev-guide/part3/#transcription-events) | `event.input_transcription`, `event.output_transcription` | Final Saved, Partial Not |
-| [Metadata](https://google.github.io/adk-docs/streaming/dev-guide/part3/#metadata-events) | `usage_metadata.total_token_count` | Always Saved |
-| [Tool Call/Response](https://google.github.io/adk-docs/streaming/dev-guide/part3/#tool-call-events) | `function_call`, `function_response` | Always Saved |
-| [Error](https://google.github.io/adk-docs/streaming/dev-guide/part3/#error-events) | `event.error_code`, `event.error_message` | Saved (logged) |
+**[Text events](https://google.github.io/adk-docs/streaming/dev-guide/part3/#text-events)** contain the model's written response in `event.content.parts[0].text`. They arrive incrementally (with `partial=True`) as the model generates, then as a complete merged message (with `partial=False`).
 
-**[Conversation Flow Control Flags](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-text-events)**:
-- [`partial`](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-partial): True for incremental chunks, False for complete merged text
-- [`interrupted`](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-interrupted-flag): True when user interrupted mid-response
-- [`turn_complete`](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-turn_complete-flag): True when model finished its response
+**[Audio events](https://google.github.io/adk-docs/streaming/dev-guide/part3/#audio-events)** come in two forms. Inline audio (`inline_data`) streams in real-time for immediate playback but is never saved. File audio (`file_data`) references stored artifacts when you enable persistence.
 
-**[Automatic Tool Execution](https://google.github.io/adk-docs/streaming/dev-guide/part3/#automatic-tool-execution-in-run_live)**:
+**[Transcription events](https://google.github.io/adk-docs/streaming/dev-guide/part3/#transcription-events)** provide speech-to-text for both user input and model output. They're invaluable for accessibility, logging, and debugging voice interactions.
 
-ADK handles tool calls automatically—you define tools on your Agent, and ADK:
-1. Detects function calls from the model
-2. Executes tools in parallel
-3. Formats and sends responses back
-4. Yields both call and response events
+**[Metadata events](https://google.github.io/adk-docs/streaming/dev-guide/part3/#metadata-events)** report token usage—essential for cost monitoring and quota management.
 
-**[Multi-Agent Workflows](https://google.github.io/adk-docs/streaming/dev-guide/part3/#best-practices-for-multi-agent-workflows)**:
+**[Tool call and response events](https://google.github.io/adk-docs/streaming/dev-guide/part3/#tool-call-events)** let you observe function execution. ADK handles the execution automatically; you just watch the events flow.
 
-For [SequentialAgent](https://google.github.io/adk-docs/streaming/dev-guide/part3/#sequentialagent-with-bidi-streaming) patterns, the diagram shows transparent transitions within a single `run_live()` loop. Events flow seamlessly across agent boundaries.
+**[Error events](https://google.github.io/adk-docs/streaming/dev-guide/part3/#error-events)** surface problems with `error_code` and `error_message` fields. Some errors are recoverable (rate limits), others are terminal (safety violations).
+
+### The Flow Control Flags
+
+Three boolean flags control conversation dynamics:
+
+[**`partial`**](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-partial) tells you whether you're seeing an incremental chunk or complete text. Display partial events for real-time typing effects; use non-partial for final storage.
+
+[**`interrupted`**](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-interrupted-flag) signals that the user started speaking while the model was still responding. Stop audio playback immediately and clear any partial text—the model is pivoting to handle the interruption.
+
+[**`turn_complete`**](https://google.github.io/adk-docs/streaming/dev-guide/part3/#handling-turn_complete-flag) indicates the model has finished its entire response. Re-enable the microphone, hide typing indicators, and mark the turn boundary in your logs.
+
+> **Why `interrupted` matters:** This flag is what makes voice AI feel natural. Without it, users must wait silently for the AI to finish speaking before they can respond. With it, conversation flows like it does between humans.
+
+---
+
+## A Real-World Example: Voice Search
+
+Let's trace a complete interaction to see how these pieces work together. A user asks: *"What's the weather in Tokyo?"*
+
+**1. Audio Capture → Queue**
+The browser captures microphone input at 16kHz, converts to PCM chunks, and sends via WebSocket. Your server receives the binary frames and calls `live_request_queue.send_realtime(audio_blob)`.
+
+**2. VAD Detection**
+The Live API's Voice Activity Detection notices the user stopped speaking. It triggers processing of the accumulated audio.
+
+**3. Transcription Event**
+You receive an event with `input_transcription.text = "What's the weather in Tokyo?"`. Display this in the chat UI so users see their words recognized.
+
+**4. Tool Execution**
+The model decides to call the `google_search` tool. You receive a tool call event, ADK executes the search automatically, and a tool response event follows with the weather data.
+
+**5. Audio Response**
+The model generates a spoken response. Audio chunks arrive as events with `inline_data`. Your client feeds them to an AudioWorklet for real-time playback: *"The weather in Tokyo is currently 22 degrees and sunny."*
+
+**6. Turn Complete**
+Finally, an event arrives with `turn_complete=True`. The UI can remove the "..." indicator to show the agent finished talking.
+
+This entire flow takes under two seconds. The user experiences it as natural conversation, unaware of the LiveRequestQueue, Event types, and session management happening beneath the surface.
+
+---
 
 ## Configuring Sessions with RunConfig
 
-[RunConfig](https://google.github.io/adk-docs/streaming/dev-guide/part4/) is your control center for streaming behavior. This infographic maps all the parameters and their purposes.
+[RunConfig](https://google.github.io/adk-docs/streaming/dev-guide/part4/) is your control center for streaming behavior. Every aspect of a session—from audio format to cost limits—is configured here.
 
 ![Comprehensive Summary of Live API RunConfig](assets/runconfig.png)
 
-**[Key RunConfig Parameters](https://google.github.io/adk-docs/streaming/dev-guide/part4/#runconfig-parameter-quick-reference)** (left column):
+### Essential Parameters
 
-| Parameter | Purpose |
-|-----------|---------|
-| [`response_modalities`](https://google.github.io/adk-docs/streaming/dev-guide/part4/#response-modalities) | Output format: `["TEXT"]` or `["AUDIO"]` (one per session) |
-| [`streaming_mode`](https://google.github.io/adk-docs/streaming/dev-guide/part4/#streamingmode-bidi-or-sse) | BIDI (WebSocket) or SSE (HTTP streaming) |
-| [`session_resumption`](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-session-resumption) | Enables automatic reconnection across ~10min timeouts |
-| [`context_window_compression`](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-context-window-compression) | Removes duration limits, manages token limits |
-| [`max_llm_calls`](https://google.github.io/adk-docs/streaming/dev-guide/part4/#max_llm_calls) | Limits calls per invocation (SSE only) |
-| [`save_live_blob`](https://google.github.io/adk-docs/streaming/dev-guide/part4/#save_live_blob) | Persists audio/video for debugging/compliance |
-| [`custom_metadata`](https://google.github.io/adk-docs/streaming/dev-guide/part4/#custom_metadata) | Attaches tracking data to events |
-| [`support_cfc`](https://google.github.io/adk-docs/streaming/dev-guide/part4/#support_cfc-experimental) | Enables compositional function calling (Gemini 2.x) |
+[**`response_modalities`**](https://google.github.io/adk-docs/streaming/dev-guide/part4/#response-modalities) determines whether the model responds with text or audio. You must choose one per session—`["TEXT"]` for chat applications, `["AUDIO"]` for voice. Native audio models require audio output; half-cascade models support both.
 
-**[Streaming Modes: BIDI vs. SSE](https://google.github.io/adk-docs/streaming/dev-guide/part4/#streamingmode-bidi-or-sse)** (right top):
+[**`streaming_mode`**](https://google.github.io/adk-docs/streaming/dev-guide/part4/#streamingmode-bidi-or-sse) selects the transport protocol. BIDI uses WebSockets to the Live API with full bidirectional streaming, interruptions, and VAD. SSE uses HTTP streaming to the standard Gemini API—simpler but text-only.
 
-- **BIDI**: WebSocket to Live API, real-time audio/video, interruptions, [VAD](https://google.github.io/adk-docs/streaming/dev-guide/part5/#voice-activity-detection-vad)
-- **SSE**: HTTP streaming to standard Gemini API, text-only, simpler deployment
+[**`session_resumption`**](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-session-resumption) enables automatic reconnection. WebSocket connections timeout after ~10 minutes. With session resumption enabled, ADK handles reconnection transparently—your code never sees the interruption.
 
-**[Session Management](https://google.github.io/adk-docs/streaming/dev-guide/part4/#understanding-live-api-connections-and-sessions)** (bottom left):
+[**`context_window_compression`**](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-context-window-compression) solves two problems at once. It removes session duration limits (normally 15 minutes for audio, 2 minutes for video) and manages token limits by summarizing older conversation history. Enable this for any session that might run long.
 
-The diagram illustrates two critical concepts:
-- **[ADK Session](https://google.github.io/adk-docs/streaming/dev-guide/part4/#adk-session-vs-live-api-session)** (persistent): Survives restarts, stored in SessionService
-- **[Live API Session](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-connections-and-sessions)** (ephemeral): Created/destroyed per `run_live()` call
+### Production Controls
 
-**Session Duration Controls**:
-1. **[Session Resumption](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-session-resumption)**: Automatically reconnects when ~10min WebSocket timeout hits
-2. **[Context Window Compression](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-context-window-compression)**: Summarizes older history, enables unlimited duration
+[**`max_llm_calls`**](https://google.github.io/adk-docs/streaming/dev-guide/part4/#max_llm_calls) caps invocations per session—useful for cost control, though it only applies to SSE mode. For BIDI streaming, implement your own turn counting.
 
-**[Concurrent Session Quotas](https://google.github.io/adk-docs/streaming/dev-guide/part4/#concurrent-live-api-sessions-and-quota-management)**:
+[**`save_live_blob`**](https://google.github.io/adk-docs/streaming/dev-guide/part4/#save_live_blob) persists audio and video to your artifact storage. Enable for debugging, compliance, or training data collection—but watch storage costs.
 
-| Platform | Limit |
-|----------|-------|
-| Gemini Live API | 50 (Tier 1) to 1,000 (Tier 2+) |
-| Vertex AI Live API | Up to 1,000 per project |
+[**`custom_metadata`**](https://google.github.io/adk-docs/streaming/dev-guide/part4/#custom_metadata) attaches arbitrary key-value data to every event. Use it for user segmentation, A/B testing, or debugging context.
 
-**[Architectural Patterns](https://google.github.io/adk-docs/streaming/dev-guide/part4/#architectural-patterns-for-managing-quotas)**:
-- **Direct Mapping**: Simple 1:1 user-to-session for small apps
-- **Session Pooling**: Queue users when quota exceeded for production scale
+### [Understanding Session Types](https://google.github.io/adk-docs/streaming/dev-guide/part4/#understanding-live-api-connections-and-sessions)
+
+One concept trips up many developers: the difference between ADK Sessions and Live API sessions.
+
+[**ADK Session**](https://google.github.io/adk-docs/streaming/dev-guide/part4/#adk-session-vs-live-api-session) is persistent. It lives in your SessionService (database, Vertex AI, or memory) and survives server restarts. When a user returns days later, their conversation history is still there.
+
+[**Live API session**](https://google.github.io/adk-docs/streaming/dev-guide/part4/#live-api-connections-and-sessions) is ephemeral. It exists only during an active `run_live()` call. When the loop ends, the Live API session is destroyed—but ADK has already persisted the important events to your ADK Session.
+
+> **Quota planning:** Gemini Live API allows 50-1,000 concurrent sessions depending on tier. Vertex AI supports up to 1,000 per project. For applications that might exceed these limits, implement [session pooling with a user queue](https://google.github.io/adk-docs/streaming/dev-guide/part4/#architectural-patterns-for-managing-quotas).
+
+---
 
 ## Multimodal Capabilities
 
-ADK Bidi-streaming isn't just about text—it's a full [multimodal platform](https://google.github.io/adk-docs/streaming/dev-guide/part5/). This final infographic covers audio, image, video, and advanced features.
+ADK Bidi-streaming isn't limited to text—it's a full [multimodal platform](https://google.github.io/adk-docs/streaming/dev-guide/part5/) supporting audio, images, and video. Understanding the specifications helps you build robust applications.
 
 ![Comprehensive Summary of ADK Live API Multimodal Capabilities](assets/multimodal.png)
 
-**[Audio Capabilities](https://google.github.io/adk-docs/streaming/dev-guide/part5/#how-to-use-audio)** (top left):
+### Audio: The Core Modality
 
-| Direction | Format | Sample Rate | Notes |
-|-----------|--------|-------------|-------|
-| [Input](https://google.github.io/adk-docs/streaming/dev-guide/part5/#sending-audio-input) | 16-bit PCM, Mono | 16kHz | Chunked streaming (50-100ms recommended) |
-| [Output](https://google.github.io/adk-docs/streaming/dev-guide/part5/#receiving-audio-output) | 16-bit PCM, Mono | 24kHz | Ring buffer playback via AudioWorklet |
+[**Input audio**](https://google.github.io/adk-docs/streaming/dev-guide/part5/#sending-audio-input) must be 16-bit PCM, mono, at 16kHz. Send chunks of 50-100ms (1,600-3,200 bytes) for optimal latency. The browser's AudioWorklet captures microphone input, converts Float32 samples to Int16, and streams via WebSocket.
 
-The waveform visualization shows natural voice conversations with sub-second latency.
+[**Output audio**](https://google.github.io/adk-docs/streaming/dev-guide/part5/#receiving-audio-output) arrives as 16-bit PCM, mono, at 24kHz. Use a ring buffer in your AudioWorklet player to absorb network jitter and ensure smooth playback.
 
-**[Image and Video](https://google.github.io/adk-docs/streaming/dev-guide/part5/#how-to-use-image-and-video)** (top right):
+### Image and Video: Frame-by-Frame
 
-Both images and video are processed as JPEG frames:
-- **Format**: JPEG (`image/jpeg`)
-- **Frame Rate**: 1 FPS maximum (not suitable for action recognition)
-- **Resolution**: 768x768 recommended
+Both images and video use the same mechanism—[JPEG frames sent via `send_realtime()`](https://google.github.io/adk-docs/streaming/dev-guide/part5/#how-to-use-image-and-video). The recommended resolution is 768×768, with a maximum frame rate of 1 FPS.
 
-The canvas capture flow shows: Video → Canvas → JPEG → ADK Live API.
+This approach works well for visual context (showing a product, sharing a document) but isn't suitable for real-time action recognition. The 1 FPS limit means fast motion won't be captured meaningfully.
 
-**[Audio Model Architectures](https://google.github.io/adk-docs/streaming/dev-guide/part5/#understanding-audio-model-architectures)** (bottom left):
+### Model Architectures
 
-| Architecture | Characteristics | Example Model |
-|--------------|-----------------|---------------|
-| **[Native Audio](https://google.github.io/adk-docs/streaming/dev-guide/part5/#native-audio-models)** | End-to-end, natural prosody, extended voices, affective dialog | `gemini-2.5-flash-native-audio-preview` |
-| **[Half-Cascade](https://google.github.io/adk-docs/streaming/dev-guide/part5/#half-cascade-models)** | Text intermediate, robust tool execution, TEXT/AUDIO support | `gemini-2.0-flash-live-001` (deprecated Dec 2025) |
+Two fundamentally different architectures power voice AI:
 
-**Advanced Audio Features** (bottom right):
+[**Native Audio models**](https://google.github.io/adk-docs/streaming/dev-guide/part5/#native-audio-models) process audio end-to-end without text intermediates. They produce more natural prosody, support an extended voice library, and enable advanced features like [affective dialog](https://google.github.io/adk-docs/streaming/dev-guide/part5/#proactivity-and-affective-dialog) (emotional adaptation) and [proactivity](https://google.github.io/adk-docs/streaming/dev-guide/part5/#proactivity-and-affective-dialog) (unsolicited suggestions). The current model is `gemini-2.5-flash-native-audio-preview`.
 
-1. **[Audio Transcription](https://google.github.io/adk-docs/streaming/dev-guide/part5/#audio-transcription)**: Enabled by default, delivers `types.Transcription` objects
-2. **[Voice Activity Detection (VAD)](https://google.github.io/adk-docs/streaming/dev-guide/part5/#voice-activity-detection-vad)**: Enabled by default for natural turn-taking
-3. **[Voice Configuration (Speech Config)](https://google.github.io/adk-docs/streaming/dev-guide/part5/#voice-configuration-speech-config)**: Agent-level or RunConfig-level voice selection
-4. **[Proactivity & Affective Dialog](https://google.github.io/adk-docs/streaming/dev-guide/part5/#proactivity-and-affective-dialog)**: Native audio only—model offers suggestions, adapts to emotions
+[**Half-Cascade models**](https://google.github.io/adk-docs/streaming/dev-guide/part5/#half-cascade-models) convert audio to text, process it, then synthesize speech. They support both TEXT and AUDIO response modalities, offering faster text responses and more predictable tool execution. The current model is `gemini-2.0-flash-live-001` (deprecated December 2025).
+
+### Advanced Features
+
+[**Audio transcription**](https://google.github.io/adk-docs/streaming/dev-guide/part5/#audio-transcription) is enabled by default. Both user speech and model speech are transcribed, arriving as separate event fields. Essential for accessibility and conversation logging.
+
+[**Voice Activity Detection**](https://google.github.io/adk-docs/streaming/dev-guide/part5/#voice-activity-detection-vad) automatically detects when users start and stop speaking. No manual signaling needed—just stream audio continuously and let the API handle turn-taking.
+
+[**Voice configuration**](https://google.github.io/adk-docs/streaming/dev-guide/part5/#voice-configuration-speech-config) lets you select from available voices. Set it per-agent for multi-agent scenarios where different agents should have distinct voices, or globally in RunConfig for consistency.
+
+> **Choosing the right model:** For natural conversation with emotional awareness, use native audio. For applications prioritizing tool execution reliability or needing text output, use half-cascade until you've tested thoroughly with native audio.
+
+---
 
 ## Putting It All Together
 
-These infographics tell a cohesive story about ADK Bidi-streaming:
+We've covered a lot of ground. Here's how the pieces connect into a coherent system:
 
-1. **[Architecture](https://google.github.io/adk-docs/streaming/dev-guide/part1/#14-adk-bidi-streaming-architecture-overview)** separates concerns cleanly—you own the application, ADK handles orchestration, Google provides AI
-2. **[ADK vs Raw API](https://google.github.io/adk-docs/streaming/dev-guide/part1/#13-adk-bidi-streaming-for-building-realtime-agent-applications)** comparison shows the dramatic reduction in implementation complexity
-3. **[Lifecycle](https://google.github.io/adk-docs/streaming/dev-guide/part1/#15-adk-bidi-streaming-application-lifecycle)** gives you the mental model for structuring your code
-4. **[LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/)** simplifies all upstream communication to four methods
-5. **[run_live()](https://google.github.io/adk-docs/streaming/dev-guide/part3/)** handles all downstream events through a single async generator
-6. **[RunConfig](https://google.github.io/adk-docs/streaming/dev-guide/part4/)** provides declarative control over every aspect of streaming behavior
-7. **[Multimodal](https://google.github.io/adk-docs/streaming/dev-guide/part5/)** capabilities enable voice, video, and advanced conversational AI features
+**[Architecture](https://google.github.io/adk-docs/streaming/dev-guide/part1/#14-adk-bidi-streaming-architecture-overview)** separates concerns cleanly. You own the application and agent definition. ADK handles orchestration. Google provides the AI infrastructure.
 
-The result? You can build production-ready real-time AI applications in days instead of months. The [ADK Bidi-streaming Developer Guide](https://google.github.io/adk-docs/streaming/dev-guide/part1/) provides the complete implementation details—from [FastAPI WebSocket servers](https://google.github.io/adk-docs/streaming/dev-guide/part1/#fastapi-application-example) to [client-side AudioWorklet processors](https://google.github.io/adk-docs/streaming/dev-guide/part5/#handling-audio-input-at-the-client)—to turn these concepts into working code.
+**[ADK vs Raw API](https://google.github.io/adk-docs/streaming/dev-guide/part1/#13-adk-bidi-streaming-for-building-realtime-agent-applications)** isn't a close comparison. ADK eliminates months of infrastructure work through automatic tool execution, transparent reconnection, typed events, and built-in persistence.
+
+**[The four-phase lifecycle](https://google.github.io/adk-docs/streaming/dev-guide/part1/#15-adk-bidi-streaming-application-lifecycle)** structures your code correctly. Initialize once at startup, configure per-session, stream bidirectionally, and terminate cleanly.
+
+**[LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/)** unifies upstream communication. Four methods handle all input types: text, audio, activity signals, and termination.
+
+**[run_live()](https://google.github.io/adk-docs/streaming/dev-guide/part3/)** streams events downstream. Seven event types cover text, audio, transcription, metadata, tools, and errors. Three flags control conversation flow.
+
+**[RunConfig](https://google.github.io/adk-docs/streaming/dev-guide/part4/)** makes behavior declarative. Modalities, resumption, compression, and controls—all set through configuration rather than code.
+
+**[Multimodal capabilities](https://google.github.io/adk-docs/streaming/dev-guide/part5/)** extend beyond text. Audio at specific sample rates, images and video as JPEG frames, and advanced features like VAD and transcription.
+
+The result? You can build production-ready real-time AI applications in days instead of months.
+
+---
 
 ## Getting Started
 
 Ready to build? Here's your path forward:
 
-1. **Read the full guide**: The [ADK Bidi-streaming Developer Guide](https://google.github.io/adk-docs/streaming/dev-guide/part1/) covers Parts 1-5 in detail
-2. **Run the demo**: The [bidi-demo](https://github.com/google/adk-samples/tree/main/python/agents/bidi-demo) provides a working FastAPI implementation
-3. **Explore ADK docs**: The [official ADK documentation](https://google.github.io/adk-docs/) covers agents, tools, sessions, and more
+**Run the demo first.** The [bidi-demo](https://github.com/google/adk-samples/tree/main/python/agents/bidi-demo) is a complete FastAPI implementation you can run locally. It demonstrates the WebSocket handler, concurrent tasks, audio processing, and UI—everything discussed in this post.
+
+**Read the full guide.** The [ADK Bidi-streaming Developer Guide](https://google.github.io/adk-docs/streaming/dev-guide/part1/) provides implementation details, code samples, and edge cases that go beyond this cheatsheet.
+
+**Explore the broader ADK ecosystem.** The [official ADK documentation](https://google.github.io/adk-docs/) covers agent design, tool development, session management, and deployment patterns.
 
 The future of AI interaction is real-time, multimodal, and conversational. ADK Bidi-streaming makes it accessible today.
-
----
-
-*This article is part of the [ADK Bidi-streaming Developer Guide](https://google.github.io/adk-docs/streaming/dev-guide/part1/) series. For the complete technical documentation with code samples, see [Part 1](https://google.github.io/adk-docs/streaming/dev-guide/part1/), [Part 2](https://google.github.io/adk-docs/streaming/dev-guide/part2/), [Part 3](https://google.github.io/adk-docs/streaming/dev-guide/part3/), [Part 4](https://google.github.io/adk-docs/streaming/dev-guide/part4/), and [Part 5](https://google.github.io/adk-docs/streaming/dev-guide/part5/) of the guide.*
