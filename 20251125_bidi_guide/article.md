@@ -1,4 +1,4 @@
-# ADK Bidi-Streaming Cheatsheet: A Visual Guide to Real-Time Voice AI
+# ADK Bidi-Streaming Cheatsheet: A Visual Guide to Real-Time Multimodal AI Agent Development
 
 Google recently published a comprehensive 5-part developer guide for building real-time voice and video AI applications with the [Agent Development Kit (ADK)](https://google.github.io/adk-docs/). The [ADK Bidi-streaming Developer Guide](https://google.github.io/adk-docs/streaming/dev-guide/part1/) covers everything from architecture fundamentals to production deployment:
 
