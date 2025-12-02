@@ -29,7 +29,6 @@ This architecture diagram reveals the elegant layering that makes ADK powerful:
 **ADK Provided (Framework Layer)**: ADK handles the complex orchestration through four key components:
 - **[LiveRequestQueue](https://google.github.io/adk-docs/streaming/dev-guide/part2/)**: Buffers and sequences incoming user messages
 - **[Runner](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-runner)**: Orchestrates agent sessions and manages conversation state
-- **[Agent](https://google.github.io/adk-docs/streaming/dev-guide/part1/#define-your-agent)**: Executes your defined logic and tools
 - **LLM Flow**: Manages the processing pipeline (internal, not directly used)
 
 **Google Provided (AI Services)**: The [Live API](https://google.github.io/adk-docs/streaming/dev-guide/part1/#12-gemini-live-api-and-vertex-ai-live-api) (either [Gemini Live API](https://ai.google.dev/gemini-api/docs/live) via AI Studio or [Vertex AI Live API](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api) via Google Cloud) provides real-time, low-latency AI processing.
