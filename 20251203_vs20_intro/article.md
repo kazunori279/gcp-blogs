@@ -1,482 +1,320 @@
-# Introducing Vertex AI Vector Search 2.0: A Fully Managed Vector Database
+# Vector Search 2.0: Build Smarter Product Search Without the ML Complexity
 
-> **TL;DR**: Vector Search 2.0 = Collections + Auto-Embeddings + Zero Infrastructure
-> - Go from 0 to prototype in **under 5 minutes**
-> - Same API scales from prototype to **billions of vectors**
-> - `pip install google-cloud-vectorsearch` and you're ready
-> - [Try the notebook now](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb)
+You know vector search is powerful. It finds "Board Shorts" when customers search "men's outfit for beach"—understanding meaning, not just matching keywords. But if you've tried to implement it, you've hit the friction.
 
----
+**The embedding pipeline problem.** You need to call an embedding API, batch your requests, handle rate limits, and store the vectors. Every time your data changes, you re-run the pipeline.
 
-## The Problem: Vector Search Shouldn't Require a PhD in Infrastructure
+**The dual storage problem.** Your vectors live in one database, your product data in another. Every query requires a join. Every update requires syncing two systems.
 
-You've built an amazing RAG application. Your embeddings are working. Your LLM is generating great responses. Time to deploy to production, right?
+**The index tuning problem.** Your prototype works great with 10,000 items. At a million? You're reading documentation about HNSW parameters, segment sizes, and recall vs. latency tradeoffs.
 
-Not so fast. With traditional vector search, you suddenly need to:
-- Create and configure an index with the right parameters
-- Deploy an index endpoint and manage its lifecycle
-- Set up scaling policies for traffic spikes
-- Coordinate batch updates through Cloud Storage
-- Monitor multiple resources and their health
+**The hybrid search problem.** Users sometimes want semantic matching ("beach outfit"), sometimes keyword matching ("SKU-12345"), often both. Combining them means running parallel searches and merging results yourself.
 
-**You came to build AI applications, not become an infrastructure engineer.**
+Vector Search 2.0 on Google Cloud eliminates these friction points:
 
-Vector Search 2.0 changes everything. Let me show you.
+```mermaid
+flowchart LR
+    subgraph Before["Traditional Vector Search"]
+        A1["Embedding Pipeline"] --> A2["Vector DB"]
+        A3["Product DB"] --> A4["Your App"]
+        A2 --> A4
+        A5["Index Tuning"] --> A2
+    end
 
-## See It Working: Your First Search in 10 Lines
+    subgraph After["Vector Search 2.0"]
+        B1["Your App"] --> B2["Collections<br/>Data + Vectors + Index"]
+        B3["Auto-Embeddings"] --> B2
+    end
+```
 
-Before we dive into concepts, here's a complete working example—an e-commerce product search:
+- **Auto-embeddings**: Define which fields to embed in your schema. Vector Search 2.0 calls Vertex AI models automatically—no embedding pipeline to build or maintain.
+- **Unified storage**: Your product data and vectors live together in Collections. One source of truth, one API.
+- **Self-tuning**: The system optimizes index parameters based on your data and query patterns.
+- **Built-in hybrid search**: Semantic, keyword, and hybrid search with Reciprocal Rank Fusion—all native.
+- **Zero to billion scale**: Start with instant kNN search (no index needed), add ANN indexes when you need sub-second latency at massive scale.
+
+In this post, I'll walk through the [official tutorial notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb), which builds a semantic product search using 10,000 fashion products from the TheLook e-commerce dataset.
+
+## The Scenario: TheLook Fashion Search
+
+TheLook is a fictional e-commerce clothing company. The dataset includes products like:
+
+- "Jostar Short Sleeve Solid Stretchy Capri Pants Set"
+- "Womens Top Stitch Jacket and Pant Set by City Lights"
+- "Ulla Popken Plus Size 3-Piece Duster and Pants Set"
+
+The goal: let customers search with natural language—"men's outfit for beach"—and find relevant products even when no keywords match.
+
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph VS2["Vector Search 2.0"]
+        subgraph Collection["Collection"]
+            Schema["Schema Definition"]
+            subgraph DataObjects["Data Objects"]
+                DO1["Product Data + Vectors"]
+                DO2["Product Data + Vectors"]
+                DO3["Product Data + Vectors"]
+            end
+        end
+        Index["Index (Optional)"]
+        Collection --> Index
+    end
+
+    subgraph Vertex["Vertex AI"]
+        Gemini["gemini-embedding-001"]
+    end
+
+    App["Your Application"] --> VS2
+    VS2 <--> Vertex
+```
+
+**Collections** hold your **Data Objects** (product data + vectors), and optional **Indexes** accelerate searches at scale. Vector Search 2.0 handles embedding generation through Vertex AI automatically.
+
+## Building TheLook Search: Step by Step
+
+### Step 1: Create a Collection with Auto-Embeddings
+
+A Collection is like a database table with superpowers. You define your data schema and tell Vector Search 2.0 which fields should be embedded:
 
 ```python
 from google.cloud import vectorsearch_v1beta
 
 client = vectorsearch_v1beta.VectorSearchServiceClient()
-data_client = vectorsearch_v1beta.DataObjectServiceClient()
-search_client = vectorsearch_v1beta.DataObjectSearchServiceClient()
-parent = f"projects/{PROJECT_ID}/locations/us-central1"
-
-# Create collection with auto-embeddings (VS2.0 generates embeddings for you!)
-client.create_collection(parent=parent, collection_id="products", collection={
-    "data_schema": {"properties": {"name": {"type": "string"}, "category": {"type": "string"}, "retail_price": {"type": "number"}}},
-    "vector_schema": {"name_embedding": {"dense_vector": {"dimensions": 768,
-        "vertex_embedding_config": {"model_id": "text-embedding-004", "text_template": "{name}"}}}}
-})
-
-# Add products - no embedding code needed!
-data_client.batch_create_data_objects(parent=f"{parent}/collections/products", requests=[
-    {"data_object_id": "1", "data_object": {"data": {"name": "Classic Blue Denim Jeans", "category": "Jeans", "retail_price": 59.99}}},
-    {"data_object_id": "2", "data_object": {"data": {"name": "Slim Fit Dark Wash Jeans", "category": "Jeans", "retail_price": 74.99}}},
-])
-
-# Search immediately - no index deployment, no waiting
-results = search_client.search_data_objects(parent=f"{parent}/collections/products",
-    semantic_search={"search_text": "blue denim jeans", "search_field": "name_embedding", "top_k": 5})
-```
-
-That's it. No index creation. No endpoint deployment. No embedding pipeline. **It just works.**
-
-## Before & After: What Changed
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         VECTOR SEARCH 1.0                                   │
-│                                                                             │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐              │
-│  │ Generate │───▶│ Upload   │───▶│ Create   │───▶│ Deploy   │              │
-│  │Embeddings│    │ to GCS   │    │  Index   │    │ Endpoint │              │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘              │
-│       │                               │               │                     │
-│       │         ┌──────────┐          │     ┌────────────────┐             │
-│       └────────▶│ Manage   │◀─────────┴────▶│Configure Scale │             │
-│                 │ Updates  │                │ & Monitoring   │             │
-│                 └──────────┘                └────────────────┘             │
-│                                                                             │
-│  Time to first query: 30-60 minutes        Resources to manage: 4+         │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-                                    ▼
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         VECTOR SEARCH 2.0                                   │
-│                                                                             │
-│         ┌──────────────┐              ┌──────────────┐                     │
-│         │   Create     │─────────────▶│    Search    │                     │
-│         │  Collection  │              │              │                     │
-│         └──────────────┘              └──────────────┘                     │
-│                │                                                            │
-│                ▼                                                            │
-│    (Auto-embeddings, auto-scaling, auto-indexing - all handled)            │
-│                                                                             │
-│  Time to first query: < 5 minutes          Resources to manage: 1          │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-| Aspect | Vector Search 1.0 | Vector Search 2.0 |
-|--------|-------------------|-------------------|
-| Time to first query | 30-60 min | < 5 min |
-| Embedding pipeline | You build it | Auto-embeddings |
-| Index management | Manual create/deploy | Automatic |
-| Scaling | Configure policies | Auto-scaling |
-| Updates | Batch via GCS | Real-time CRUD |
-| Resources to manage | 4+ (index, endpoint, GCS, etc.) | 1 (collection) |
-
-## Architecture: It's Just a Collection
-
-```
-                    ┌─────────────────────────────────────────┐
-                    │            COLLECTION                    │
-                    │  ┌─────────────────────────────────────┐│
-                    │  │         Data Schema                 ││
-                    │  │  (name, category, retail_price...)  ││
-                    │  └─────────────────────────────────────┘│
-                    │  ┌─────────────────────────────────────┐│
-     Your Data ────▶│  │         Data Objects                ││────▶ Search Results
-                    │  │  (products, documents, content...)  ││
-                    │  └─────────────────────────────────────┘│
-                    │  ┌─────────────────────────────────────┐│
-                    │  │      Vector Schema + Embeddings     ││
-                    │  │  (auto-generated or bring your own) ││
-                    │  └─────────────────────────────────────┘│
-                    │  ┌─────────────────────────────────────┐│
-                    │  │    Index (optional, for scale)      ││
-                    │  │  (kNN → ANN when you need speed)    ││
-                    │  └─────────────────────────────────────┘│
-                    └─────────────────────────────────────────┘
-```
-
-**One resource. Everything included.** Your data, vectors, and index all live together.
-
-## Choose Your Path
-
-Different needs, different approaches. Pick what fits:
-
-### Path 1: "I just want to prototype quickly"
-
-Use kNN (no index needed) with auto-embeddings:
-
-```python
-# Create collection with auto-embeddings
-client.create_collection(parent=parent, collection_id="products", collection={
-    "vector_schema": {"name_embedding": {"dense_vector": {
-        "dimensions": 768,
-        "vertex_embedding_config": {"model_id": "text-embedding-004", "text_template": "{name}"}
-    }}}
-})
-
-# Insert data - embeddings generated automatically
-data_client.create_data_object(parent=f"{parent}/collections/products",
-    data_object_id="prod-1",
-    data_object={"data": {"name": "Blue Denim Jeans", "category": "Jeans"}, "vectors": {}})
-
-# Search immediately (kNN - no index required)
-results = search_client.search_data_objects(...)
-```
-
-**Time to working demo: ~2 minutes**
-
-### Path 2: "I have my own embeddings"
-
-Bring your own vectors:
-
-```python
-client.create_collection(parent=parent, collection_id="products", collection={
-    "vector_schema": {"product_embedding": {"dense_vector": {"dimensions": 768}}}
-})
-
-# Insert with your pre-computed embeddings
-data_client.batch_create_data_objects(parent=f"{parent}/collections/products", requests=[
-    {"data_object_id": "prod-1", "data_object": {
-        "data": {"name": "Blue Denim Jeans"},
-        "vectors": {"product_embedding": {"values": your_embedding}}
-    }}
-])
-```
-
-### Path 3: "I need production scale"
-
-Add an ANN index for billion-scale search:
-
-```python
-# Same collection, same data, same API - just add an index
-client.create_index(
-    parent=f"{parent}/collections/products",
-    index_id="product-name-index",
-    index={
-        "index_field": "name_embedding",
-        "filter_fields": ["category", "retail_price"],
-        "store_fields": ["name"]
-    }
-)
-
-# Search uses the same API - now backed by ANN
-results = search_client.search_data_objects(...)  # Millisecond latency at billion scale
-```
-
-### Path 4: "I need hybrid search + ranking"
-
-Combine semantic, text search, and RRF ranking:
-
-```python
-results = search_client.batch_search_data_objects(
-    parent=f"{parent}/collections/products",
-    searches=[
-        {"semantic_search": {"search_text": "blue denim jeans", "search_field": "name_embedding", "top_k": 20}},
-        {"text_search": {"search_text": "denim OR jeans", "data_field_names": ["name"], "top_k": 20}},
-    ],
-    combine={"ranker": {"rrf": {"weights": [1.0, 1.0]}}}  # RRF ranking
-)
-```
-
-## Performance: The Numbers
-
-| Metric | Value |
-|--------|-------|
-| Query latency (with ANN index) | < 10ms at 1B+ vectors |
-| Time to first query (kNN, no index) | Immediate |
-| Index build time | Minutes, not hours |
-| Max vectors per collection | Billions |
-| Concurrent queries | Auto-scales |
-
-VS2.0 is powered by the same ScaNN infrastructure behind Google Search, YouTube, and Google Play.
-
-## Building E-Commerce Product Search: Complete Walkthrough
-
-Let's build something real using the [TheLook e-commerce dataset](https://console.cloud.google.com/marketplace/product/bigquery-public-data/thelook-ecommerce). We'll create a product search system that:
-
-1. Stores fashion products with auto-generated embeddings
-2. Finds similar products by semantic meaning
-3. Filters by category and price
-4. Scales to production when ready
-
-### The Dataset
-
-TheLook contains ~30K fashion products. For this demo, we'll use 3,000 products:
-
-| ID | Name | Category | Price |
-|----|------|----------|-------|
-| 8037 | Jostar Short Sleeve Solid Stretchy Capri Pants Set | Clothing Sets | $38.99 |
-| 8036 | Womens Top Stitch Jacket and Pant Set | Clothing Sets | $199.95 |
-| 8035 | Ulla Popken Plus Size 3-Piece Duster and Pants Set | Clothing Sets | $159.00 |
-
-### Step 1: Set Up
-
-```bash
-pip install google-cloud-vectorsearch tqdm
-gcloud auth application-default login
-gcloud services enable vectorsearch.googleapis.com aiplatform.googleapis.com
-```
-
-### Step 2: Initialize the SDK Clients
-
-VS2.0 uses three specialized clients:
-
-```python
-from google.cloud import vectorsearch_v1beta
-
-# VectorSearchServiceClient: Manages Collections and Indexes
-vector_search_client = vectorsearch_v1beta.VectorSearchServiceClient()
-
-# DataObjectServiceClient: Manages Data Objects (CRUD)
-data_object_client = vectorsearch_v1beta.DataObjectServiceClient()
-
-# DataObjectSearchServiceClient: Performs search and query operations
-search_client = vectorsearch_v1beta.DataObjectSearchServiceClient()
-
-PROJECT_ID = "your-project-id"
-LOCATION = "us-central1"
-parent = f"projects/{PROJECT_ID}/locations/{LOCATION}"
-```
-
-### Step 3: Create the Collection
-
-```python
-collection_id = "products-demo"
 
 request = vectorsearch_v1beta.CreateCollectionRequest(
-    parent=parent,
-    collection_id=collection_id,
+    parent=f"projects/{PROJECT_ID}/locations/{LOCATION}",
+    collection_id="thelook_products",
     collection={
-        # Data Schema: Product attributes
         "data_schema": {
             "type": "object",
             "properties": {
-                "id": {"type": "string"},
                 "name": {"type": "string"},
                 "category": {"type": "string"},
+                "brand": {"type": "string"},
                 "retail_price": {"type": "number"},
             },
         },
-        # Vector Schema: Auto-embeddings from product name
         "vector_schema": {
             "name_dense_embedding": {
                 "dense_vector": {
                     "dimensions": 768,
                     "vertex_embedding_config": {
-                        "model_id": "text-embedding-004",
+                        "model_id": "gemini-embedding-001",
                         "text_template": "{name}",
                         "task_type": "RETRIEVAL_DOCUMENT",
                     },
                 },
             },
         },
-    }
+    },
 )
 
-operation = vector_search_client.create_collection(request=request)
-operation.result()
-print("✅ Collection created!")
+collection = client.create_collection(request=request)
 ```
 
-**Key Point**: The `vertex_embedding_config` tells VS2.0 to automatically generate embeddings from the `name` field using `text-embedding-004`. No embedding code needed!
+The `vertex_embedding_config` is the key. It tells the system: "Take the product `name`, send it to `gemini-embedding-001`, and store the resulting 768-dimensional vector." You never call an embedding API yourself.
 
-### Step 4: Add Products
+### Step 2: Load the Product Catalog
+
+Add your 10,000 products. The `vectors` field stays empty—Vector Search 2.0 fills it automatically:
 
 ```python
-import json
-import urllib.request
+data_client = vectorsearch_v1beta.DataObjectServiceClient()
 
-# Download TheLook dataset
-dataset_url = "https://storage.googleapis.com/gcp-samples-ic0-vs20demo/thelook_dataset.jsonl"
-products = []
-
-with urllib.request.urlopen(dataset_url) as response:
-    for line in response:
-        product = json.loads(line.decode('utf-8'))
-        products.append({
+# Load products in batches
+for batch in product_batches:
+    requests = [
+        {
             "data_object_id": product["id"],
             "data_object": {
                 "data": {
-                    "id": product["id"],
                     "name": product["name"],
                     "category": product["category"],
+                    "brand": product["brand"],
                     "retail_price": product["retail_price"],
                 },
-                "vectors": {},  # Empty = auto-generate embeddings!
-            }
-        })
-        if len(products) >= 3000:
-            break
+                "vectors": {},  # Auto-generated from name field
+            },
+        }
+        for product in batch
+    ]
 
-# Batch import with rate limiting (100 per batch, 2.5s delay for API quota)
-import time
-from tqdm import tqdm
-
-batch_size = 100
-for batch_start in tqdm(range(0, len(products), batch_size), desc="Importing"):
-    batch = products[batch_start:batch_start + batch_size]
-
-    request = vectorsearch_v1beta.BatchCreateDataObjectsRequest(
-        parent=f"{parent}/collections/{collection_id}",
-        requests=batch,
+    data_client.batch_create_data_objects(
+        parent=collection.name,
+        requests=requests,
     )
-    data_object_client.batch_create_data_objects(request)
-    time.sleep(2.5)  # Stay under 3,000 RPM embedding API quota
-
-print(f"✅ Imported {len(products)} products!")
 ```
 
-### Step 5: Semantic Search
+Here's what happens behind the scenes:
 
-Find products by meaning, not just keywords:
+```mermaid
+sequenceDiagram
+    participant App as Your App
+    participant VS2 as Vector Search 2.0
+    participant Gemini as gemini-embedding-001
+
+    App->>VS2: Create Data Object<br/>{"name": "Board Shorts", "vectors": {}}
+    VS2->>Gemini: Embed "Board Shorts"
+    Gemini-->>VS2: [0.12, -0.45, 0.78, ...]
+    VS2->>VS2: Store data + vector together
+    VS2-->>App: Success
+```
+
+You send the product data with empty vectors. Vector Search 2.0 calls the embedding model, gets the vector, and stores everything together.
+
+### Step 3: Semantic Search in Action
+
+Now the payoff. Search for "men's outfit for beach":
 
 ```python
-query = "blue denim jeans"
+search_client = vectorsearch_v1beta.DataObjectSearchServiceClient()
 
 request = vectorsearch_v1beta.SearchDataObjectsRequest(
-    parent=f"{parent}/collections/{collection_id}",
+    parent=collection.name,
     semantic_search=vectorsearch_v1beta.SemanticSearch(
-        search_text=query,
+        search_text="men's outfit for beach",
         search_field="name_dense_embedding",
-        task_type="RETRIEVAL_QUERY",
-        top_k=5,
-        output_fields=vectorsearch_v1beta.OutputFields(
-            data_fields=["name", "category", "retail_price"]
-        ),
+        task_type="QUESTION_ANSWERING",
+        top_k=10,
+    ),
+    return_fields=["name", "category", "retail_price"],
+)
+
+results = search_client.search_data_objects(request=request)
+```
+
+The results include swimwear, casual shorts, and beach-appropriate clothing—products that match the intent, not the keywords.
+
+### Step 4: Compare with Keyword Search
+
+For comparison, here's traditional text search for "short":
+
+```python
+request = vectorsearch_v1beta.SearchDataObjectsRequest(
+    parent=collection.name,
+    text_search=vectorsearch_v1beta.TextSearch(
+        search_text="short",
+        search_field="name",
+    ),
+    return_fields=["name", "category", "retail_price"],
+)
+```
+
+This finds products with "short" in the name—useful, but limited to exact matches.
+
+### Step 5: Hybrid Search—Best of Both Worlds
+
+What about "men's short for beach"? The customer wants beach shorts specifically. Hybrid search combines semantic understanding with keyword matching:
+
+```python
+semantic_request = vectorsearch_v1beta.SearchDataObjectsRequest(
+    semantic_search=vectorsearch_v1beta.SemanticSearch(
+        search_text="men's short for beach",
+        search_field="name_dense_embedding",
+        top_k=20,
     ),
 )
 
-results = search_client.search_data_objects(request)
+text_request = vectorsearch_v1beta.SearchDataObjectsRequest(
+    text_search=vectorsearch_v1beta.TextSearch(
+        search_text="short",
+        search_field="name",
+    ),
+)
 
-print(f"Results for '{query}':")
-for i, result in enumerate(results, 1):
-    data = result.data_object.data
-    print(f"{i}. {data['name'][:60]}...")
-    print(f"   {data['category']} - ${data['retail_price']:.2f}")
+batch_request = vectorsearch_v1beta.BatchSearchDataObjectsRequest(
+    parent=collection.name,
+    requests=[semantic_request, text_request],
+    ranking_config=vectorsearch_v1beta.RankingConfig(
+        reciprocal_rank_fusion={}
+    ),
+    return_fields=["name", "category", "retail_price"],
+)
+
+results = search_client.batch_search_data_objects(request=batch_request)
 ```
 
-Output:
-```
-Results for 'blue denim jeans':
-1. Levi's Classic Blue Denim Straight Leg Jeans...
-   Jeans - $68.00
-2. Wrangler Slim Fit Dark Wash Denim Jeans...
-   Jeans - $54.99
-3. Gap High Rise Skinny Jeans in Medium Indigo...
-   Jeans - $79.95
+Reciprocal Rank Fusion (RRF) combines the rankings from both searches. Products that score well on both semantic relevance and keyword matching rise to the top.
+
+```mermaid
+flowchart LR
+    Query["🔍 men's short for beach"]
+
+    subgraph Searches["Parallel Searches"]
+        direction TB
+        Semantic["Semantic Search"]
+        Text["Text Search: 'short'"]
+    end
+
+    subgraph Results["Individual Results"]
+        direction TB
+        SR["1. Swim Trunks<br/>2. Beach Towel<br/>3. Board Shorts"]
+        TR["1. Short Sleeve Shirt<br/>2. Board Shorts<br/>3. Running Shorts"]
+    end
+
+    RRF["Reciprocal Rank Fusion"]
+    Final["Final Results:<br/>1. Board Shorts ⭐<br/>2. Swim Trunks<br/>3. Running Shorts"]
+
+    Query --> Searches
+    Semantic --> SR
+    Text --> TR
+    SR --> RRF
+    TR --> RRF
+    RRF --> Final
 ```
 
-### Step 6: Filter Products
+"Board Shorts" ranks highly in both results, so RRF promotes it to the top—exactly what the customer wanted.
 
-Query by attributes like SQL WHERE clause:
+### Step 6: Add Filters for Business Logic
+
+Semantic search becomes even more powerful with filters. Find beach-appropriate clothing under $50:
 
 ```python
-# Find affordable jeans (under $75)
-request = vectorsearch_v1beta.QueryDataObjectsRequest(
-    parent=f"{parent}/collections/{collection_id}",
+request = vectorsearch_v1beta.SearchDataObjectsRequest(
+    parent=collection.name,
+    semantic_search=vectorsearch_v1beta.SemanticSearch(
+        search_text="casual beach wear",
+        search_field="name_dense_embedding",
+        top_k=10,
+    ),
     filter={
         "$and": [
-            {"category": {"$eq": "Jeans"}},
-            {"retail_price": {"$lt": 75}}
+            {"category": {"$in": ["Shorts", "Swim", "Tops"]}},
+            {"retail_price": {"$lte": 50}},
         ]
     },
-    output_fields=vectorsearch_v1beta.OutputFields(data_fields=["*"]),
+    return_fields=["name", "category", "retail_price"],
 )
-
-results = search_client.query_data_objects(request)
-print("Jeans under $75:")
-for p in results[:5]:
-    print(f"  {p.data['name'][:50]}... - ${p.data['retail_price']:.2f}")
 ```
 
-### Step 7: Hybrid Search with RRF Ranking
+The filter language supports comparison operators (`$eq`, `$gt`, `$lte`), logical operators (`$and`, `$or`), and array matching (`$in`, `$nin`).
 
-Combine semantic + keyword search for best results:
+### Step 7: Scale for Production
 
-```python
-query = "blue denim jeans"
+During development, Vector Search 2.0 uses kNN (exact) search with zero configuration. For production, create an ANN index:
 
-request = vectorsearch_v1beta.BatchSearchDataObjectsRequest(
-    parent=f"{parent}/collections/{collection_id}",
-    searches=[
-        # Semantic search: understands meaning
-        vectorsearch_v1beta.Search(
-            semantic_search=vectorsearch_v1beta.SemanticSearch(
-                search_text=query,
-                search_field="name_dense_embedding",
-                task_type="RETRIEVAL_QUERY",
-                top_k=20,
-                output_fields=vectorsearch_v1beta.OutputFields(
-                    data_fields=["name", "category", "retail_price"]
-                ),
-            )
-        ),
-        # Text search: keyword matching
-        vectorsearch_v1beta.Search(
-            text_search=vectorsearch_v1beta.TextSearch(
-                search_text=query,
-                data_field_names=["name"],
-                top_k=20,
-                output_fields=vectorsearch_v1beta.OutputFields(
-                    data_fields=["name", "category", "retail_price"]
-                ),
-            )
-        ),
-    ],
-    # Combine with Reciprocal Rank Fusion
-    combine=vectorsearch_v1beta.BatchSearchDataObjectsRequest.CombineResultsOptions(
-        ranker=vectorsearch_v1beta.Ranker(
-            rrf=vectorsearch_v1beta.ReciprocalRankFusion(weights=[1.0, 1.0])
-        )
-    ),
-)
+```mermaid
+flowchart LR
+    subgraph Dev["Development (kNN)"]
+        D1["10K products"] --> D2["Exact search"]
+        D2 --> D3["~100ms latency"]
+    end
 
-results = search_client.batch_search_data_objects(request)
+    subgraph Prod["Production (ANN Index)"]
+        P1["1B+ products"] --> P2["Approximate search"]
+        P2 --> P3["<10ms latency"]
+        P2 --> P4["~99% accuracy"]
+    end
 
-print(f"Hybrid search results for '{query}':")
-for i, result in enumerate(results.results[0].results[:5], 1):
-    data = result.data_object.data
-    print(f"{i}. {data['name'][:55]}...")
-    print(f"   {data['category']} | ${data['retail_price']:.2f}")
+    Dev -.->|"Add Index"| Prod
 ```
-
-### Step 8: Scale to Production with ANN Index
-
-When ready for production, add an index for billion-scale performance:
 
 ```python
 request = vectorsearch_v1beta.CreateIndexRequest(
-    parent=f"{parent}/collections/{collection_id}",
-    index_id="product-name-index",
+    parent=collection.name,
+    index_id="product-search-index",
     index={
         "index_field": "name_dense_embedding",
         "filter_fields": ["category", "retail_price"],
@@ -484,114 +322,46 @@ request = vectorsearch_v1beta.CreateIndexRequest(
     },
 )
 
-index_operation = vector_search_client.create_index(request)
-print("⏳ Creating ANN index (takes a few minutes)...")
-index_operation.result()
-print("✅ Index ready - now running at production scale!")
+operation = client.create_index(request=request)
+index = operation.result()
 ```
 
-**The best part?** Your search code doesn't change. Same API, now backed by billion-scale ANN powered by Google's ScaNN algorithm.
+The index enables:
 
-### Step 9: Clean Up
+- Sub-second latency at billion-scale
+- ~99% accuracy compared to exact search
+- Efficient filtered queries
 
-**Important**: Delete resources to avoid charges!
+Your search code doesn't change—the system automatically uses the index.
 
-```python
-# Delete index first
-vector_search_client.delete_index(
-    name=f"{parent}/collections/{collection_id}/indexes/product-name-index"
-)
+## The Complete Picture
 
-# Then delete collection (deletes all data objects too)
-vector_search_client.delete_collection(
-    name=f"{parent}/collections/{collection_id}"
-)
-print("✅ All resources deleted!")
-```
+Here's what we built:
 
-## Key Features Deep Dive
+| Search Type | Query | What It Finds |
+|------------|-------|---------------|
+| Text | "short" | Products with "short" in name |
+| Semantic | "men's outfit for beach" | Beach-appropriate clothing by meaning |
+| Hybrid | "men's short for beach" | Best of both: beach items that are shorts |
+| Filtered | "casual beach wear" under $50 | Semantic match within business constraints |
 
-### Auto-Embeddings
+All of this with a managed service that handles embeddings, storage, and scaling automatically.
 
-No more managing embedding pipelines. Configure once, and VS2.0 handles the rest:
+## Try It Yourself
 
-```python
-"vertex_embedding_config": {
-    "model_id": "text-embedding-004",   # Vertex AI embedding model
-    "text_template": "{name}",          # Field to embed
-    "task_type": "RETRIEVAL_DOCUMENT"   # Optimization hint
-}
-```
+The complete notebook walks through this entire scenario:
 
-Supported models: `text-embedding-004`, `text-multilingual-embedding-002`, and multimodal models.
+[Vector Search 2.0 Introduction Notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb)
 
-### kNN vs ANN: When to Use Each
+You'll load the TheLook dataset, run each search type, and see the results yourself. The notebook also covers cleanup so you're not charged for resources you're not using.
 
-| Scenario | Use | Why |
-|----------|-----|-----|
-| Development & prototyping | kNN | Instant - no index build wait |
-| Small datasets (< 10K) | kNN | Fast enough without indexing |
-| Production with large data | ANN | Worth the build time for speed |
-| Billions of vectors | ANN | Only viable option |
+## Getting Started
 
-### Storage Tiers
+1. Enable the Vector Search API in your Google Cloud project
+2. Install the client: `pip install google-cloud-vectorsearch`
+3. Run the notebook in Colab or Vertex AI Workbench
+4. Adapt the patterns to your own product catalog
 
-Choose the right cost/performance balance:
+Vector search transforms how customers discover products. Instead of hoping they guess the right keywords, you meet them where they are—with natural language that just works.
 
-| Tier | Backing | Latency | Cost | Best For |
-|------|---------|---------|------|----------|
-| **Performance** | RAM | Lowest | Higher | Real-time apps, high QPS |
-| **Storage** | SSD | Low | Lower | Large datasets, cost-sensitive |
-
-## Migration from Vector Search 1.0
-
-Already using Vector Search? Here's the mapping:
-
-| Vector Search 1.0 | Vector Search 2.0 |
-|-------------------|-------------------|
-| `MatchingEngineIndex` | `Collection` + `Index` |
-| `MatchingEngineIndexEndpoint` | Managed automatically |
-| `aiplatform` SDK | `vectorsearch_v1beta` SDK |
-| Batch update via GCS | Real-time CRUD |
-| Manual scaling config | Auto-scaling |
-
-## Integrations
-
-VS2.0 works with the tools you already use:
-
-- **ADK (Agent Development Kit)**: Build AI agents with VS2.0 as the retrieval backend
-- **LangChain**: Native vector store integration
-- **LlamaIndex**: Document retrieval and RAG applications
-- **MCP Servers**: Connect via Model Context Protocol
-
-## Best Practices
-
-1. **Start with kNN, graduate to ANN**: Prototype without indexes, add them when you need scale
-2. **Use auto-embeddings**: Less code, fewer bugs, automatic model updates
-3. **Batch for bulk imports**: 100 items per batch, with rate limiting for embedding quotas
-4. **Design filters upfront**: Declare `filter_fields` for fields you'll query frequently
-5. **Match your distance metric**: Use what your embedding model was trained with
-6. **Choose the right tier**: Performance for latency-critical, Storage for cost-sensitive
-7. **Clean up resources**: Delete indexes and collections when done to avoid charges
-
-## What's Next?
-
-Vertex AI Vector Search 2.0 is now in **Public Preview**. Get started:
-
-1. **Try the notebook**: [Vector Search 2.0 Introduction](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb)
-2. **Read the docs**: [Vector Search 2.0 Documentation](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview)
-3. **Install the SDK**: `pip install google-cloud-vectorsearch`
-4. **Join the community**: Share feedback and get help
-
-Vector databases don't have to be complicated. With VS2.0, you can focus on what matters—building great AI applications.
-
----
-
-## Resources
-
-- [Vector Search 2.0 Documentation](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview)
-- [Python SDK Documentation](https://cloud.google.com/python/docs/reference/google-cloud-vectorsearch/latest)
-- [Introduction Notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb)
-- [TheLook Dataset](https://console.cloud.google.com/marketplace/product/bigquery-public-data/thelook-ecommerce)
-- [Google Cloud Console](https://console.cloud.google.com/vertex-ai/vector-search)
-- [Pricing](https://cloud.google.com/vertex-ai/pricing)
+The gap between "I've heard of vector search" and "I'm using it in production" just got a lot smaller.
