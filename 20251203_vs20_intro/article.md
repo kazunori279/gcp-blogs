@@ -2,6 +2,8 @@
 
 [Vector search](https://en.wikipedia.org/wiki/Vector_database), or Vector database, has become a foundational technology for modern AI systems. By representing data as high-dimensional embeddings that capture semantic meaning, it powers everything from semantic search that understands user intent, to recommendation engines that surface relevant content, to Retrieval-Augmented Generation (RAG) pipelines that ground LLM responses in real, up-to-date information. Major tech companies including Google rely on this technology at massive scale to process billions of searches and recommendations daily.
 
+Yet building production-ready vector search remains challenging. Google recently released [Vertex AI Vector Search 2.0](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview) to change that—a fully managed service designed to eliminate the operational complexity that slows teams down.
+
 ## Why Vector Search Is Harder Than It Looks
 
 The concept is simple. The implementation? That's where things get complicated.
@@ -12,42 +14,48 @@ The concept is simple. The implementation? That's where things get complicated.
 
 **The index tuning.** To build [approximate nearest neighbor (ANN)](https://en.wikipedia.org/wiki/Nearest_neighbor_search) indexes with millions of items, you need to make [expert decisions](https://cloud.google.com/vertex-ai/docs/vector-search/configuring-indexes) to get the best performance: How many items should each index node hold? What percentage of the index should be scanned per query to balance recall against latency? What shard size matches your dataset? These are ML infrastructure decisions that have nothing to do with your actual product.
 
-**The hybrid search.** Semantic search can find "Board Shorts" when users search "men's outfit for beach"—but fails when they search "SKU-12345" because product codes have no semantic meaning that embeddings can capture. It also struggles with newly coined terms or brand names that didn't exist when the embedding model was trained. Keyword search can overcome these challenges, but misses semantic intent. Users need both. But building a keyword search engine is its own challenge—you need to tokenize documents, build and maintain an inverted index or sparse embedding index. Then combining semantic and keyword results means running parallel searches on both engines, normalizing scores, and merging results yourself with techniques like Reciprocal Rank Fusion.
+**The hybrid search.** Semantic search excels at understanding intent—finding "Board Shorts" when users search "men's outfit for beach." But it fails on product codes like "SKU-12345" that have no semantic meaning, and struggles with newly coined terms or brand names the embedding model has never seen. Keyword search handles these cases but misses semantic intent. Users need both, which is why hybrid search has become essential. Building it, however, is far from trivial. You need a keyword search engine with tokenization, inverted indexes, or sparse embeddings—on top of your vector search infrastructure. Then you must run parallel queries on both engines, normalize their different scoring systems, and merge results with techniques like Reciprocal Rank Fusion.
 
-Vector Search 2.0 on Google Cloud eliminates these friction points:
+![Vector Search Challenges](assets/vector_search_challenges.jpeg)
 
-```mermaid
-flowchart LR
-    subgraph Before["Traditional Vector Search"]
-        A1["Embedding Pipeline"] --> A2["Vector DB"]
-        A3["Product DB"] --> A4["Your App"]
-        A2 --> A4
-        A5["Index Tuning"] --> A2
-    end
+## How Vector Search 2.0 Solves These Problems
 
-    subgraph After["Vector Search 2.0"]
-        B1["Your App"] --> B2["Collections<br/>Data + Vectors + Index"]
-        B3["Auto-Embeddings"] --> B2
-    end
-```
+Vector Search 2.0 on Google Cloud directly addresses each of these challenges:
 
-- **Auto-embeddings**: Define which fields to embed in your schema. Vector Search 2.0 calls Vertex AI models automatically—no embedding pipeline to build or maintain.
-- **Unified storage**: Your product data and vectors live together in Collections. One source of truth, one API.
-- **Self-tuning**: The system optimizes index parameters based on your data and query patterns.
-- **Built-in hybrid search**: Semantic, keyword, and hybrid search with Reciprocal Rank Fusion—all native.
-- **Zero to billion scale**: Start with instant kNN search (no index needed), add ANN indexes when you need sub-second latency at massive scale.
+| Challenge | Vector Search 2.0 Solution |
+|-----------|---------------------------|
+| **The embedding generation** | **Auto-embeddings**: Define which fields to embed in your schema. Vector Search 2.0 calls Vertex AI models automatically—no embedding pipeline to build or maintain. |
+| **The feature store** | **Unified storage**: Your product data and vectors live together in Collections. One source of truth, one API. No separate feature store needed. |
+| **The index tuning** | **Self-tuning indexes**: The system optimizes index parameters based on your data and query patterns. Start with instant kNN search (no index needed), add ANN indexes when you need sub-second latency at massive scale. |
+| **The hybrid search** | **Built-in hybrid search**: Provides built-in full-text search without needing to generate sparse embeddings or inverted index yourself. Semantic search, keyword search, and hybrid search with Reciprocal Rank Fusion—all native, no external search engine required. |
 
-In this post, I'll walk through the [official tutorial notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb), which builds a semantic product search using 10,000 fashion products from the TheLook e-commerce dataset.
+![Vector Search 2.0 Benefits](assets/vector_search_benefits.jpeg)
+
+In this post, I'll walk through the [official tutorial notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb), which builds a fully-managed hybrid search using 10,000 fashion products from the [TheLook e-commerce dataset](https://console.cloud.google.com/marketplace/product/bigquery-public-data/thelook-ecommerce).
 
 ## The Scenario: TheLook Fashion Search
 
-TheLook is a fictional e-commerce clothing company. The dataset includes products like:
+TheLook is a fictional e-commerce clothing company with a product catalog of approximately 30,000 fashion items across 26 categories including Dresses, Jeans, Tops & Tees, Outerwear & Coats, and more. Each product has attributes like:
 
-- "Jostar Short Sleeve Solid Stretchy Capri Pants Set"
-- "Womens Top Stitch Jacket and Pant Set by City Lights"
-- "Ulla Popken Plus Size 3-Piece Duster and Pants Set"
+| Attribute | Example |
+|-----------|---------|
+| **id** | "8037" |
+| **name** | "Jostar Short Sleeve Solid Stretchy Capri Pants Set" |
+| **category** | "Clothing Sets" |
+| **retail_price** | 38.99 |
 
-The goal: let customers search with natural language—"men's outfit for beach"—and find relevant products even when no keywords match.
+### What Users Want to Do
+
+Real e-commerce search needs to handle diverse user intents:
+
+| User Intent | Example Query | Expected Behavior |
+|------------|---------------|-------------------|
+| **Semantic discovery** | "Men's outfit for beach" | Find swimwear, board shorts, casual wear—even without keyword matches |
+| **Keyword lookup** | "SKU-12345" or brand name | Exact match on product codes or new brand names the AI model hasn't seen |
+| **Filtered shopping** | "Dresses under $100" | Combine semantic understanding with price/category constraints |
+| **Hybrid search** | "Short pants for summer" | Leverage both semantic relevance and keyword matching for best results |
+
+The tutorial notebook demonstrates each of these scenarios using a 10,000 product sample for faster processing.
 
 ## Architecture Overview
 
