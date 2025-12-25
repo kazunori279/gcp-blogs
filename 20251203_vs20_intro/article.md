@@ -1,14 +1,18 @@
-# Vector Search 2.0: Build Smarter Product Search Without the ML Complexity
+# Introducing Vertex AI Vector Search 2.0: From Zero to Billion Scale
 
-You know vector search is powerful. It finds "Board Shorts" when customers search "men's outfit for beach"—understanding meaning, not just matching keywords. But if you've tried to implement it, you've hit the friction.
+[Vector search](https://en.wikipedia.org/wiki/Vector_database), or Vector database, has become a foundational technology for modern AI systems. By representing data as high-dimensional embeddings that capture semantic meaning, it powers everything from semantic search that understands user intent, to recommendation engines that surface relevant content, to Retrieval-Augmented Generation (RAG) pipelines that ground LLM responses in real, up-to-date information. Major tech companies including Google rely on this technology at massive scale to process billions of searches and recommendations daily.
 
-**The embedding pipeline problem.** You need to call an embedding API, batch your requests, handle rate limits, and store the vectors. Every time your data changes, you re-run the pipeline.
+## Why Vector Search Is Harder Than It Looks
 
-**The dual storage problem.** Your vectors live in one database, your product data in another. Every query requires a join. Every update requires syncing two systems.
+The concept is simple. The implementation? That's where things get complicated.
 
-**The index tuning problem.** Your prototype works great with 10,000 items. At a million? You're reading documentation about HNSW parameters, segment sizes, and recall vs. latency tradeoffs.
+**The embedding generation.** Vector search requires converting your data into numerical representations (embeddings) that capture semantic meaning. This means you need to call an [embedding API](https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings), batch your requests, handle rate limits, and store the vectors. Every time your data changes, you re-run the pipeline. It's infrastructure you have to build before you can even start searching.
 
-**The hybrid search problem.** Users sometimes want semantic matching ("beach outfit"), sometimes keyword matching ("SKU-12345"), often both. Combining them means running parallel searches and merging results yourself.
+**The feature store.** Many vector search products provide only a vector index that returns a list of item IDs for each search. To serve full search results to users, you need a separate [feature store](https://cloud.google.com/vertex-ai/docs/featurestore/latest/overview) or [key-value store](https://cloud.google.com/bigtable/docs/overview) to retrieve the actual item data—names, prices, categories, image URLs in millisecs—by passing those IDs. This means building and maintaining two different services: one for vector search, one for data retrieval. Every update requires syncing both systems. Data consistency becomes your responsibility.
+
+**The index tuning.** To build [approximate nearest neighbor (ANN)](https://en.wikipedia.org/wiki/Nearest_neighbor_search) indexes with millions of items, you need to make [expert decisions](https://cloud.google.com/vertex-ai/docs/vector-search/configuring-indexes) to get the best performance: How many items should each index node hold? What percentage of the index should be scanned per query to balance recall against latency? What shard size matches your dataset? These are ML infrastructure decisions that have nothing to do with your actual product.
+
+**The hybrid search.** Semantic search can find "Board Shorts" when users search "men's outfit for beach"—but fails when they search "SKU-12345" because product codes have no semantic meaning that embeddings can capture. It also struggles with newly coined terms or brand names that didn't exist when the embedding model was trained. Keyword search can overcome these challenges, but misses semantic intent. Users need both. But building a keyword search engine is its own challenge—you need to tokenize documents, build and maintain an inverted index or sparse embedding index. Then combining semantic and keyword results means running parallel searches on both engines, normalizing scores, and merging results yourself with techniques like Reciprocal Rank Fusion.
 
 Vector Search 2.0 on Google Cloud eliminates these friction points:
 
