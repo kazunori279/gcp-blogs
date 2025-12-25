@@ -35,7 +35,11 @@ In this post, I'll walk through the [official tutorial notebook](https://github.
 
 ## The Scenario: TheLook Fashion Search
 
-TheLook is a fictional e-commerce clothing company with a product catalog of approximately 30,000 fashion items across 26 categories including Dresses, Jeans, Tops & Tees, Outerwear & Coats, and more. Each product has attributes like:
+Imagine a customer lands on your e-commerce site and types "something cute for a beach vacation." With traditional keyword search, they get zero results—no product in your catalog contains those exact words. Frustrated, they leave.
+
+Now imagine a different experience. The same query returns sundresses, swimwear cover-ups, and flowy shorts—products that perfectly match what the customer had in mind, even though none contain the word "beach" in their titles. That's the experience vector search enables.
+
+To demonstrate how Vector Search 2.0 makes this possible, we'll build a product search system using [TheLook](https://console.cloud.google.com/marketplace/product/bigquery-public-data/thelook-ecommerce), a realistic e-commerce dataset with 30,000 fashion items across 26 categories. Each product has attributes you'd find in any real catalog:
 
 | Attribute | Example |
 |-----------|---------|
@@ -44,18 +48,20 @@ TheLook is a fictional e-commerce clothing company with a product catalog of app
 | **category** | "Clothing Sets" |
 | **retail_price** | 38.99 |
 
-### What Users Want to Do
+![TheLook Scenario](assets/thelook_scenario.png)
 
-Real e-commerce search needs to handle diverse user intents:
+### The Search Challenges We'll Solve
 
-| User Intent | Example Query | Expected Behavior |
-|------------|---------------|-------------------|
-| **Semantic discovery** | "Men's outfit for beach" | Find swimwear, board shorts, casual wear—even without keyword matches |
-| **Keyword lookup** | "SKU-12345" or brand name | Exact match on product codes or new brand names the AI model hasn't seen |
-| **Filtered shopping** | "Dresses under $100" | Combine semantic understanding with price/category constraints |
-| **Hybrid search** | "Short pants for summer" | Leverage both semantic relevance and keyword matching for best results |
+Real customers don't search the way databases expect. They search the way they think:
 
-The tutorial notebook demonstrates each of these scenarios using a 10,000 product sample for faster processing.
+| What Customers Type | What They Expect | The Challenge |
+|---------------------|------------------|---------------|
+| "Men's outfit for beach" | Swimwear, board shorts, casual wear | No product contains these keywords. The system must understand the **user's intent** and find **relevant** items—not just similar text, but products that actually answer the question. |
+| "SKU-12345" | That exact product | Semantic models haven't seen this code during training. Embeddings treat it as meaningless noise, so semantic search fails completely. You need **full-text keyword search**. |
+| "Dresses under $100" | Affordable dresses only | Semantic understanding alone isn't enough. The system must combine vector similarity with **structured filters**—like SQL WHERE clauses—on price, category, or availability. |
+| "Short pants for summer" | Shorts ranked by relevance | Neither approach works alone. Semantic search finds summer clothing but might miss "shorts." Keyword search finds "short" but doesn't understand seasonality. **Hybrid search** combines both, ranking products that match on meaning *and* keywords highest. |
+
+Vector Search 2.0 solves all four challenges with a unified architecture. The rest of this post walks through the [official tutorial notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb), showing how each piece fits together.
 
 ## Architecture Overview
 
