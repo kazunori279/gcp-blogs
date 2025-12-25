@@ -2,7 +2,7 @@
 
 [Vector search](https://en.wikipedia.org/wiki/Vector_database), or Vector database, has become a foundational technology for modern AI systems. By representing data as high-dimensional embeddings that capture semantic meaning, it powers everything from **semantic search** that understands user intent, to **recommendation engines** that surface relevant content, to **Retrieval-Augmented Generation (RAG)** and **AI Agents** that ground LLM responses in real, up-to-date information. Major tech companies including Google rely on this technology at massive scale to process billions of searches, recommendations and groundings daily.
 
-Yet building production-ready vector search remains challenging. Google recently released [Vertex AI Vector Search 2.0](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview) to change that—a fully managed service designed to eliminate the operational complexity that slows teams down.
+Yet building production-ready vector search remains challenging. Google recently released [Vertex AI Vector Search 2.0](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview) to change that—a fully managed service designed to eliminate the design and operational complexity that slows teams down.
 
 ![vs20 intro](assets/vs20_post_thumbnail.jpeg)
 
