@@ -1,35 +1,37 @@
 # Introducing Vertex AI Vector Search 2.0: From Zero to Billion Scale
 
-[Vector search](https://en.wikipedia.org/wiki/Vector_database), or Vector database, has become a foundational technology for modern AI systems. By representing data as high-dimensional embeddings that capture semantic meaning, it powers everything from semantic search that understands user intent, to recommendation engines that surface relevant content, to Retrieval-Augmented Generation (RAG) pipelines that ground LLM responses in real, up-to-date information. Major tech companies including Google rely on this technology at massive scale to process billions of searches and recommendations daily.
+[Vector search](https://en.wikipedia.org/wiki/Vector_database), or Vector database, has become a foundational technology for modern AI systems. By representing data as high-dimensional embeddings that capture semantic meaning, it powers everything from **semantic search** that understands user intent, to **recommendation engines** that surface relevant content, to **Retrieval-Augmented Generation (RAG)** and **AI Agents** that ground LLM responses in real, up-to-date information. Major tech companies including Google rely on this technology at massive scale to process billions of searches, recommendations and groundings daily.
 
 Yet building production-ready vector search remains challenging. Google recently released [Vertex AI Vector Search 2.0](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview) to change that—a fully managed service designed to eliminate the operational complexity that slows teams down.
+
+![vs20 intro](assets/vs20_post_thumbnail.jpeg)
 
 ## Why Vector Search Is Harder Than It Looks
 
 The concept is simple. The implementation? That's where things get complicated.
 
+![Vector Search Challenges](assets/vector_search_challenges.jpeg)
+
 **The embedding generation.** Vector search requires converting your data into numerical representations (embeddings) that capture semantic meaning. This means you need to call an [embedding API](https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings), batch your requests, handle rate limits, and store the vectors. Every time your data changes, you re-run the pipeline. It's infrastructure you have to build before you can even start searching.
 
-**The feature store.** Many vector search products provide only a vector index that returns a list of item IDs for each search. To serve full search results to users, you need a separate [feature store](https://cloud.google.com/vertex-ai/docs/featurestore/latest/overview) or [key-value store](https://cloud.google.com/bigtable/docs/overview) to retrieve the actual item data—names, prices, categories, image URLs in millisecs—by passing those IDs. This means building and maintaining two different services: one for vector search, one for data retrieval. Every update requires syncing both systems. Data consistency becomes your responsibility.
+**The feature store.** Many vector search products provide only a vector index that returns a list of item IDs for each search. To serve full search results to users, you need a separate [feature store](https://cloud.google.com/vertex-ai/docs/featurestore/latest/overview) or [key-value store](https://cloud.google.com/bigtable/docs/overview) to retrieve the actual item data—names, prices, categories, image URLs in millisecs—by passing those IDs. In many cases, you also need to implement complex filtering on item features such as price, category, or availability. This means building and maintaining two different services: one for vector search, one for data retrieval and filtering. Every update and query requires accessing and syncing both systems.
 
 **The index tuning.** To build [approximate nearest neighbor (ANN)](https://en.wikipedia.org/wiki/Nearest_neighbor_search) indexes with millions of items, you need to make [expert decisions](https://cloud.google.com/vertex-ai/docs/vector-search/configuring-indexes) to get the best performance: How many items should each index node hold? What percentage of the index should be scanned per query to balance recall against latency? What shard size matches your dataset? These are ML infrastructure decisions that have nothing to do with your actual product.
 
-**The hybrid search.** Semantic search excels at understanding intent—finding "Board Shorts" when users search "men's outfit for beach." But it fails on product codes like "SKU-12345" that have no semantic meaning, and struggles with newly coined terms or brand names the embedding model has never seen. Keyword search handles these cases but misses semantic intent. Users need both, which is why hybrid search has become essential. Building it, however, is far from trivial. You need a keyword search engine with tokenization, inverted indexes, or sparse embeddings—on top of your vector search infrastructure. Then you must run parallel queries on both engines, normalize their different scoring systems, and merge results with techniques like Reciprocal Rank Fusion.
-
-![Vector Search Challenges](assets/vector_search_challenges.jpeg)
+**The hybrid search.** Semantic search excels at understanding intent—finding "Board Shorts" when users search "men's outfit for beach." But it fails on product codes like "SKU-12345" that have no semantic meaning, and struggles with newly coined terms or brand names the embedding model has never seen. Keyword search handles these cases but misses semantic context. Users need both, which is why [hybrid search](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/hybrid-search.ipynb) has become essential. Building it, however, is far from trivial. You need a full-text search engine with tokenization, inverted indexes, or sparse embeddings—in addition to your vector search engine. Then you must run parallel queries on both engines, normalize their different scoring systems, and merge results with techniques like Reciprocal Rank Fusion.
 
 ## How Vector Search 2.0 Solves These Problems
 
 Vector Search 2.0 on Google Cloud directly addresses each of these challenges:
 
+![Vector Search 2.0 Benefits](assets/vector_search_benefits.jpeg)
+
 | Challenge | Vector Search 2.0 Solution |
 |-----------|---------------------------|
-| **The embedding generation** | **Auto-embeddings**: Define which fields to embed in your schema. Vector Search 2.0 calls Vertex AI models automatically—no embedding pipeline to build or maintain. |
-| **The feature store** | **Unified storage**: Your product data and vectors live together in Collections. One source of truth, one API. No separate feature store needed. |
-| **The index tuning** | **Self-tuning indexes**: The system optimizes index parameters based on your data and query patterns. Start with instant kNN search (no index needed), add ANN indexes when you need sub-second latency at massive scale. |
+| **The embedding generation** | **Auto-embeddings**: Define which fields to embed in your schema. Vector Search 2.0 calls Vertex AI embedding models automatically—no embedding pipeline to build or maintain. |
+| **The feature store** | **Unified storage**: Your product data and vectors live together in Collections with an SQL-like filtering capability. One source of truth, one API. No separate feature store needed. |
+| **The index tuning** | **Self-tuning indexes**: The system optimizes index parameters based on your data and query patterns. Start with instant kNN search (no index needed), add self-tuning ANN indexes when you need millisec latency at massive scale. |
 | **The hybrid search** | **Built-in hybrid search**: Provides built-in full-text search without needing to generate sparse embeddings or inverted index yourself. Semantic search, keyword search, and hybrid search with Reciprocal Rank Fusion—all native, no external search engine required. |
-
-![Vector Search 2.0 Benefits](assets/vector_search_benefits.jpeg)
 
 In this post, I'll walk through the [official tutorial notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb), which builds a fully-managed hybrid search using 10,000 fashion products from the [TheLook e-commerce dataset](https://console.cloud.google.com/marketplace/product/bigquery-public-data/thelook-ecommerce).
 
@@ -41,56 +43,27 @@ Now imagine a different experience. The same query returns sundresses, swimwear 
 
 To demonstrate how Vector Search 2.0 makes this possible, we'll build a product search system using [TheLook](https://console.cloud.google.com/marketplace/product/bigquery-public-data/thelook-ecommerce), a realistic e-commerce dataset with 30,000 fashion items across 26 categories. Each product has attributes you'd find in any real catalog:
 
-| Attribute | Example |
-|-----------|---------|
-| **id** | "8037" |
-| **name** | "Jostar Short Sleeve Solid Stretchy Capri Pants Set" |
-| **category** | "Clothing Sets" |
-| **retail_price** | 38.99 |
-
 ![TheLook Scenario](assets/thelook_scenario.png)
 
 ### The Search Challenges We'll Solve
 
 Real customers don't search the way databases expect. They search the way they think:
 
-| What Customers Type | What They Expect | The Challenge |
-|---------------------|------------------|---------------|
-| "Men's outfit for beach" | Swimwear, board shorts, casual wear | No product contains these keywords. The system must understand the **user's intent** and find **relevant** items—not just similar text, but products that actually answer the question. |
-| "SKU-12345" | That exact product | Semantic models haven't seen this code during training. Embeddings treat it as meaningless noise, so semantic search fails completely. You need **full-text keyword search**. |
-| "Dresses under $100" | Affordable dresses only | Semantic understanding alone isn't enough. The system must combine vector similarity with **structured filters**—like SQL WHERE clauses—on price, category, or availability. |
-| "Short pants for summer" | Shorts ranked by relevance | Neither approach works alone. Semantic search finds summer clothing but might miss "shorts." Keyword search finds "short" but doesn't understand seasonality. **Hybrid search** combines both, ranking products that match on meaning *and* keywords highest. |
+![Search Challenges](assets/search_challenges_table.png)
 
 Vector Search 2.0 solves all four challenges with a unified architecture. The rest of this post walks through the [official tutorial notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb), showing how each piece fits together.
 
-## Architecture Overview
+## Vector Search 2.0 Data Architecture
 
-```mermaid
-flowchart TB
-    subgraph VS2["Vector Search 2.0"]
-        subgraph Collection["Collection"]
-            Schema["Schema Definition"]
-            subgraph DataObjects["Data Objects"]
-                DO1["Product Data + Vectors"]
-                DO2["Product Data + Vectors"]
-                DO3["Product Data + Vectors"]
-            end
-        end
-        Index["Index (Optional)"]
-        Collection --> Index
-    end
+Before diving into code, let's understand how Vector Search 2.0 organizes your data. The architecture centers on three key concepts: Collections, Data Objects, and Indexes.
 
-    subgraph Vertex["Vertex AI"]
-        Gemini["gemini-embedding-001"]
-    end
+![Data Architecture](assets/vs20_data_arch.jpeg)
 
-    App["Your Application"] --> VS2
-    VS2 <--> Vertex
-```
-
-**Collections** hold your **Data Objects** (product data + vectors), and optional **Indexes** accelerate searches at scale. Vector Search 2.0 handles embedding generation through Vertex AI automatically.
+A **Collection** defines your data structure—the fields you want to store and which ones should be embedded. **Data Objects** are the actual items (products, documents, images) stored in a Collection, each with its data and auto-generated vectors or your own vectors. An **Index** optimizes queries at scale, enabling millisec latency across billions of items. You can start without an index for development with zero setup time, then add one when you need production performance.
 
 ## Building TheLook Search: Step by Step
+
+Now let's build a working product search system. We'll load 10,000 fashion items from TheLook, enable auto-embeddings, and run semantic, keyword, and hybrid searches—all in about 50 lines of code.
 
 ### Step 1: Create a Collection with Auto-Embeddings
 
@@ -108,9 +81,9 @@ request = vectorsearch_v1beta.CreateCollectionRequest(
         "data_schema": {
             "type": "object",
             "properties": {
+                "id": {"type": "string"},
                 "name": {"type": "string"},
                 "category": {"type": "string"},
-                "brand": {"type": "string"},
                 "retail_price": {"type": "number"},
             },
         },
@@ -132,25 +105,25 @@ request = vectorsearch_v1beta.CreateCollectionRequest(
 collection = client.create_collection(request=request)
 ```
 
-The `vertex_embedding_config` is the key. It tells the system: "Take the product `name`, send it to `gemini-embedding-001`, and store the resulting 768-dimensional vector." You never call an embedding API yourself.
+This code defines a Collection with two schemas: `data_schema` specifies the product fields (id, name, category, price), and `vector_schema` defines how embeddings are generated. The `vertex_embedding_config` is the key. It tells the system: "Take the product `name`, send it to [gemini-embedding-001](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings#supported-models), and store the resulting 768-dimensional vector." You never call an embedding API yourself.
 
-### Step 2: Load the Product Catalog
+### Step 2: Load Products as Data Objects
 
-Add your 10,000 products. The `vectors` field stays empty—Vector Search 2.0 fills it automatically:
+With the Collection ready, load your product catalog using batch operations. Each product becomes a Data Object with its data fields populated and the `vectors` field left empty—Vector Search 2.0 automatically generates the embeddings:
 
 ```python
 data_client = vectorsearch_v1beta.DataObjectServiceClient()
 
 # Load products in batches
 for batch in product_batches:
-    requests = [
+    batch_request = [
         {
             "data_object_id": product["id"],
             "data_object": {
                 "data": {
+                    "id": product["id"],
                     "name": product["name"],
                     "category": product["category"],
-                    "brand": product["brand"],
                     "retail_price": product["retail_price"],
                 },
                 "vectors": {},  # Auto-generated from name field
@@ -159,175 +132,136 @@ for batch in product_batches:
         for product in batch
     ]
 
-    data_client.batch_create_data_objects(
+    request = vectorsearch_v1beta.BatchCreateDataObjectsRequest(
         parent=collection.name,
-        requests=requests,
+        requests=batch_request,
     )
+    data_client.batch_create_data_objects(request=request)
 ```
 
-Here's what happens behind the scenes:
+Notice that `vectors` is an empty object. This is where auto-embeddings work their magic. Here's what happens behind the scenes when you create a Data Object:
 
-```mermaid
-sequenceDiagram
-    participant App as Your App
-    participant VS2 as Vector Search 2.0
-    participant Gemini as gemini-embedding-001
+![Auto-embedding generations](assets/autoemb_gen.png)
 
-    App->>VS2: Create Data Object<br/>{"name": "Board Shorts", "vectors": {}}
-    VS2->>Gemini: Embed "Board Shorts"
-    Gemini-->>VS2: [0.12, -0.45, 0.78, ...]
-    VS2->>VS2: Store data + vector together
-    VS2-->>App: Success
-```
+You send the product data with empty vectors. Vector Search 2.0 calls the embedding model, gets the vector, and stores everything together. The same auto-embedding process runs whenever you update an existing Data Object, keeping your vectors in sync with your data.
 
-You send the product data with empty vectors. Vector Search 2.0 calls the embedding model, gets the vector, and stores everything together.
+### Step 3: Search with Hybrid Search
 
-### Step 3: Semantic Search in Action
+Now the payoff. Vector Search 2.0 supports three search modes: **semantic search** (understands intent via embeddings), **text search** (keyword matching), and **hybrid search** (combines both). Hybrid search delivers the best results for most use cases—semantic search finds "Board Shorts" when users search "men's outfit for beach," while text search ensures exact matches like product codes aren't missed.
 
-Now the payoff. Search for "men's outfit for beach":
+![Hybrid Search](assets/hybrid_search.png)
+
+Here's hybrid search in action for "men's short for beach":
 
 ```python
-search_client = vectorsearch_v1beta.DataObjectSearchServiceClient()
-
-request = vectorsearch_v1beta.SearchDataObjectsRequest(
-    parent=collection.name,
-    semantic_search=vectorsearch_v1beta.SemanticSearch(
-        search_text="men's outfit for beach",
-        search_field="name_dense_embedding",
-        task_type="QUESTION_ANSWERING",
-        top_k=10,
-    ),
-    return_fields=["name", "category", "retail_price"],
-)
-
-results = search_client.search_data_objects(request=request)
-```
-
-The results include swimwear, casual shorts, and beach-appropriate clothing—products that match the intent, not the keywords.
-
-### Step 4: Compare with Keyword Search
-
-For comparison, here's traditional text search for "short":
-
-```python
-request = vectorsearch_v1beta.SearchDataObjectsRequest(
-    parent=collection.name,
-    text_search=vectorsearch_v1beta.TextSearch(
-        search_text="short",
-        search_field="name",
-    ),
-    return_fields=["name", "category", "retail_price"],
-)
-```
-
-This finds products with "short" in the name—useful, but limited to exact matches.
-
-### Step 5: Hybrid Search—Best of Both Worlds
-
-What about "men's short for beach"? The customer wants beach shorts specifically. Hybrid search combines semantic understanding with keyword matching:
-
-```python
-semantic_request = vectorsearch_v1beta.SearchDataObjectsRequest(
-    semantic_search=vectorsearch_v1beta.SemanticSearch(
-        search_text="men's short for beach",
-        search_field="name_dense_embedding",
-        top_k=20,
-    ),
-)
-
-text_request = vectorsearch_v1beta.SearchDataObjectsRequest(
-    text_search=vectorsearch_v1beta.TextSearch(
-        search_text="short",
-        search_field="name",
-    ),
-)
+query_text = "men's short for beach"
 
 batch_request = vectorsearch_v1beta.BatchSearchDataObjectsRequest(
     parent=collection.name,
-    requests=[semantic_request, text_request],
-    ranking_config=vectorsearch_v1beta.RankingConfig(
-        reciprocal_rank_fusion={}
+    searches=[
+        vectorsearch_v1beta.Search(
+            semantic_search=vectorsearch_v1beta.SemanticSearch(
+                search_text=query_text,
+                search_field="name_dense_embedding",
+                task_type="QUESTION_ANSWERING",
+                top_k=20,
+                output_fields=vectorsearch_v1beta.OutputFields(
+                    data_fields=["name", "category", "retail_price"]
+                ),
+            )
+        ),
+        vectorsearch_v1beta.Search(
+            text_search=vectorsearch_v1beta.TextSearch(
+                search_text=query_text,
+                data_field_names=["name"],
+                top_k=20,
+                output_fields=vectorsearch_v1beta.OutputFields(
+                    data_fields=["name", "category", "retail_price"]
+                ),
+            )
+        ),
+    ],
+    combine=vectorsearch_v1beta.BatchSearchDataObjectsRequest.CombineResultsOptions(
+        ranker=vectorsearch_v1beta.Ranker(
+            rrf=vectorsearch_v1beta.ReciprocalRankFusion(weights=[1.0, 1.0])
+        )
     ),
-    return_fields=["name", "category", "retail_price"],
 )
 
 results = search_client.batch_search_data_objects(request=batch_request)
 ```
 
-Reciprocal Rank Fusion (RRF) combines the rankings from both searches. Products that score well on both semantic relevance and keyword matching rise to the top.
+This code runs two searches in parallel: a `semantic_search` that understands the query's intent through embeddings, and a `text_search` that finds keyword matches in product names. The `combine` parameter with `ReciprocalRankFusion` merges both result sets into a single ranked list.
 
-```mermaid
-flowchart LR
-    Query["🔍 men's short for beach"]
+Reciprocal Rank Fusion (RRF) combines the rankings from both searches. Products that score well on both semantic relevance and keyword matching rise to the top. Here are the actual results from running this query on TheLook:
 
-    subgraph Searches["Parallel Searches"]
-        direction TB
-        Semantic["Semantic Search"]
-        Text["Text Search: 'short'"]
-    end
-
-    subgraph Results["Individual Results"]
-        direction TB
-        SR["1. Swim Trunks<br/>2. Beach Towel<br/>3. Board Shorts"]
-        TR["1. Short Sleeve Shirt<br/>2. Board Shorts<br/>3. Running Shorts"]
-    end
-
-    RRF["Reciprocal Rank Fusion"]
-    Final["Final Results:<br/>1. Board Shorts ⭐<br/>2. Swim Trunks<br/>3. Running Shorts"]
-
-    Query --> Searches
-    Semantic --> SR
-    Text --> TR
-    SR --> RRF
-    TR --> RRF
-    RRF --> Final
+```
+Hybrid search results for 'Men's short for beach' (Semantic + Text with built-in RRF):
+================================================================================
+ 1. Mens Racing Beach Fitted Short Trunk Jammer - $20.97
+ 2. Beach Depot UPF 50+ Men's Short Sleeve Rash Guard Shirt - $29.95
+ 3. Relaxed Boardshort Short - $51.75
+ 4. Original Penguin Men's Fashion Short - $79.00
+ 5. Bottoms Out Men's Ocean Print Swim Short - $25.00
+ 6. GOTS Certified 100% Organic Cotton Shorts for Men - $22.00
+ 7. Men's Jersey Short - $8.49
+ 8. Hurley Men's 4D Boardshort - $149.50
+ 9. Mens Hawaiian Board Shorts Island Khaki - $24.99
+10. Micros Men's Way Short - $40.88
 ```
 
-"Board Shorts" ranks highly in both results, so RRF promotes it to the top—exactly what the customer wanted.
 
-### Step 6: Add Filters for Business Logic
+#### Why Task Type Embeddings Matter
 
-Semantic search becomes even more powerful with filters. Find beach-appropriate clothing under $50:
+Notice the `task_type` parameters in the code above: `RETRIEVAL_DOCUMENT` when indexing products, and `QUESTION_ANSWERING` when searching. This isn't arbitrary—it's a key technique for improving search quality by letting the embedding model work **like a recommendation model**.
+
+Most vector search use cases rely on simple similarity matching, but this often fails to provide production-level search quality because questions and answers aren't inherently similar in embedding space. "What's good for a beach vacation?" and "Board Shorts" have different semantics, yet they should match. Task type embeddings solve this by optimizing the embedding model for asymmetric relationships: documents are embedded differently than queries, creating an embedding space where relevant matches cluster together—adding the capability of recommendation, finding relevant items based on user intent.
+
+![Task Type Embeddings](assets/task_types.png)
+
+Using task-specific embeddings can improve search quality by 30-40% compared to generic embeddings. For a deep dive into how this works, see the [Task Type Embedding notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/task-type-embedding.ipynb).
+
+### Step 4: Add Filters for Business Logic
+
+Beyond vector search, you can query your data using SQL-like filters—useful for browsing by category, filtering by price range, or any business logic that doesn't require semantic understanding. Here's how to find affordable jeans under $75:
 
 ```python
-request = vectorsearch_v1beta.SearchDataObjectsRequest(
+request = vectorsearch_v1beta.QueryDataObjectsRequest(
     parent=collection.name,
-    semantic_search=vectorsearch_v1beta.SemanticSearch(
-        search_text="casual beach wear",
-        search_field="name_dense_embedding",
-        top_k=10,
-    ),
     filter={
         "$and": [
-            {"category": {"$in": ["Shorts", "Swim", "Tops"]}},
-            {"retail_price": {"$lte": 50}},
+            {"category": {"$eq": "Jeans"}},
+            {"retail_price": {"$lt": 75}},
         ]
     },
-    return_fields=["name", "category", "retail_price"],
+    output_fields=vectorsearch_v1beta.OutputFields(data_fields=["*"]),
 )
+
+results = search_client.query_data_objects(request=request)
 ```
 
-The filter language supports comparison operators (`$eq`, `$gt`, `$lte`), logical operators (`$and`, `$or`), and array matching (`$in`, `$nin`).
+The [filter expression language](https://docs.cloud.google.com/vertex-ai/docs/vector-search-2/query-search/query#filter_expression_language) supports comparison operators (`$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`), logical operators (`$and`, `$or`), and array operators (`$in`, `$nin`, `$all`). Here's what the query returns:
 
-### Step 7: Scale for Production
-
-During development, Vector Search 2.0 uses kNN (exact) search with zero configuration. For production, create an ANN index:
-
-```mermaid
-flowchart LR
-    subgraph Dev["Development (kNN)"]
-        D1["10K products"] --> D2["Exact search"]
-        D2 --> D3["~100ms latency"]
-    end
-
-    subgraph Prod["Production (ANN Index)"]
-        P1["1B+ products"] --> P2["Approximate search"]
-        P2 --> P3["<10ms latency"]
-        P2 --> P4["~99% accuracy"]
-    end
-
-    Dev -.->|"Add Index"| Prod
 ```
+Jeans under $75:
+"Levi's 512 Misses Perfectly Slimming Boo... ($54.00)", 
+'YMI Juniors Fleur De Lis Capri Jean... ($25.00)', 
+"Lucky Brand Jeans Men's Style: Slim Boot... ($73.96)", 
+"Hurley Men's 84 Slim Denim Pant... ($69.45)", 
+"KR3W Klassic Jeans - Dark Blue... ($64.00)"
+```
+
+You can also combine filters with semantic or hybrid search—for example, finding "casual summer wear" but only in the Shorts category under $50.
+
+### Step 5: From Zero to Billion Scale
+
+Everything we've done so far uses **kNN (k-Nearest Neighbors)**—a brute-force algorithm that compares your query against every vector in the Collection. kNN is perfect for development: zero setup time, instant searches, and 100% accuracy. But as your dataset grows, latency increases linearly.
+
+For production at scale, Vector Search 2.0 offers **ANN (Approximate Nearest Neighbor)** indexes powered by Google's [ScaNN (Scalable Nearest Neighbors)](https://github.com/google-research/google-research/tree/master/scann) algorithm—the same technology behind Google Search, YouTube, and Google Play. ANN trades a tiny amount of accuracy (~99%) for massive speed gains: sub-10ms latency even with billions of vectors.
+
+![ANN](assets/ann.jpeg)
+
+Creating an ANN index is straightforward:
 
 ```python
 request = vectorsearch_v1beta.CreateIndexRequest(
@@ -344,42 +278,28 @@ operation = client.create_index(request=request)
 index = operation.result()
 ```
 
-The index enables:
-
-- Sub-second latency at billion-scale
-- ~99% accuracy compared to exact search
-- Efficient filtered queries
-
-Your search code doesn't change—the system automatically uses the index.
+The `index_field` specifies which vector field to index, `filter_fields` enables filtering during search, and `store_fields` caches frequently accessed data in the index for faster retrieval. Once created, the index accelerates searches automatically—no code changes required.
 
 ## The Complete Picture
 
-Here's what we built:
+In just five steps—with steps 1 through 4 taking only about **5 minutes**—we built a production-ready product search system:
 
-| Search Type | Query | What It Finds |
-|------------|-------|---------------|
-| Text | "short" | Products with "short" in name |
-| Semantic | "men's outfit for beach" | Beach-appropriate clothing by meaning |
-| Hybrid | "men's short for beach" | Best of both: beach items that are shorts |
-| Filtered | "casual beach wear" under $50 | Semantic match within business constraints |
+![Complete Picture](assets/complete_picture.jpeg)
 
-All of this with a managed service that handles embeddings, storage, and scaling automatically.
+Vector Search 2.0 eliminates the infrastructure complexity that typically slows down vector search adoption. You focus on your product; the platform handles embeddings, indexing, and scaling.
 
-## Try It Yourself
+### Try It Yourself
 
-The complete notebook walks through this entire scenario:
+Ready to build your own vector search? Start here:
 
-[Vector Search 2.0 Introduction Notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb)
+**Quick start:** [Vector Search 2.0 Introduction Notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/vector-search-2-intro.ipynb) — Run in Colab with one click. Load TheLook, run every search type, and see results in minutes.
 
-You'll load the TheLook dataset, run each search type, and see the results yourself. The notebook also covers cleanup so you're not charged for resources you're not using.
+**Learn more:**
+- [Vector Search 2.0 Documentation](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview)
+- [Python SDK Reference](https://cloud.google.com/python/docs/reference/vectorsearch/latest)
 
-## Getting Started
+---
 
-1. Enable the Vector Search API in your Google Cloud project
-2. Install the client: `pip install google-cloud-vectorsearch`
-3. Run the notebook in Colab or Vertex AI Workbench
-4. Adapt the patterns to your own product catalog
+Vector search used to require stitching together embedding pipelines, feature stores, ANN indexes, and full-text search engines. Vector Search 2.0 replaces that complexity with a single, fully managed service—so you can go from zero to billion-scale semantic search without becoming an infrastructure expert.
 
-Vector search transforms how customers discover products. Instead of hoping they guess the right keywords, you meet them where they are—with natural language that just works.
-
-The gap between "I've heard of vector search" and "I'm using it in production" just got a lot smaller.
+The gap between "I've heard of vector search" and "I'm running it in production" just got a lot smaller.
