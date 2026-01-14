@@ -1,8 +1,10 @@
-# Agentic RAG Simplified: Fully Managed Retrieval and Reasoning in Under 200 Lines of Code
+# 10-Minute Agentic RAG with the New Vector Search 2.0 and ADK
 
-In my [previous post](../20251203_vs20_intro/article.md), I introduced Vertex AI Vector Search 2.0 and showed how it simplifies building production-ready semantic search. But search is just one piece of the puzzle. The real challenge comes when you want to build **AI agents** that can autonomously retrieve information, reason about it, and take action.
+In my [previous post](../20251203_vs20_intro/article.md), I showed how the new [Vertex AI Vector Search 2.0](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview) eliminates the hardest parts of building semantic search: **auto-embeddings** remove the need for embedding pipelines, **unified storage** eliminates the separate feature store, **self-tuning indexes** handle ANN configuration automatically, and **[built-in hybrid search](https://cloud.google.com/vertex-ai/docs/vector-search-2/query-search/search)** combines semantic and keyword matching in one API call.
 
-This is where **Agentic RAG** comes in—and where things get complicated.
+But what if you could take those benefits further—and build a complete **AI agent** that retrieves, reasons, and responds conversationally? That's exactly what happens when you combine Vector Search 2.0 with **[Agent Development Kit (ADK)](https://google.github.io/adk-docs/)**, Google's open-source framework for building AI agents.
+
+In this post, I'll show you how to build a fully functional Agentic RAG system in about 10 minutes—a travel agent that searches 2,000 London Airbnb listings using natural language.
 
 ![Travel Agent](assets/travel_agent_thumbnail.jpeg)
 
@@ -26,7 +28,7 @@ Building this from scratch means stitching together multiple systems:
 | **Vector search infrastructure** | Embedding pipelines, vector indexes, metadata storage, hybrid search |
 | **Agent framework** | Prompt management, tool calling, conversation state, error handling |
 | **Glue code** | Custom integration between your agent and your search backend |
-| **Scaling concerns** | Session management, memory persistence, production deployment |
+| **AgentOps** | Session management, memory persistence, production deployment |
 
 Each layer adds complexity. Each integration point is a potential failure mode. And you haven't even started building your actual product yet.
 
@@ -41,9 +43,9 @@ The combination of **Vertex AI Vector Search 2.0** and **Agent Development Kit (
 | **Vector search infrastructure** | Vector Search 2.0 handles embeddings, storage, indexing, and hybrid search in one managed service |
 | **Agent framework** | ADK provides production-ready agent orchestration with tools, memory, and streaming |
 | **Glue code** | A single Python function wraps your search as an ADK tool—the agent handles the rest |
-| **Scaling concerns** | Both services are fully managed with built-in scalability |
+| **AgentOps** | Both services are fully managed with built-in scalability |
 
-In this post, I'll walk through the [Travel Agent notebook](resources/vectorsearch2_travel_agent.ipynb), which demonstrates this architecture by building a vacation rental search agent using real Airbnb data.
+In this post, I'll walk through the [Travel Agent notebook](https://github.com/google/adk-samples/blob/main/python/notebooks/grounding/vectorsearch2_travel_agent.ipynb), which demonstrates this architecture by building a vacation rental search agent using real Airbnb data.
 
 ## What We're Building
 
@@ -81,7 +83,7 @@ The agent will:
 
 ## Step 1: Create a Collection with Auto-Embeddings
 
-First, we create a Vector Search 2.0 Collection to store our rental listings. The Collection defines two schemas: a **data schema** for the listing attributes, and a **vector schema** for automatic embedding generation.
+First, we create a Vector Search 2.0 [Collection](https://cloud.google.com/vertex-ai/docs/vector-search-2/collections/collections) to store our rental listings. The Collection defines two schemas: a **data schema** for the listing attributes, and a **vector schema** for automatic embedding generation.
 
 ```python
 from google.cloud import vectorsearch_v1beta
@@ -135,7 +137,7 @@ The `text_template` combines multiple fields (`{description}` and `{neighborhood
 
 ## Step 2: Ingest Data with Automatic Embeddings
 
-With the Collection ready, we load 2,000 Airbnb listings. Each listing becomes a Data Object with an empty `vectors` field—Vector Search 2.0 fills it automatically:
+With the Collection ready, we load 2,000 Airbnb listings. Each listing becomes a [Data Object](https://cloud.google.com/vertex-ai/docs/vector-search-2/data-objects/data-objects) with an empty `vectors` field—Vector Search 2.0 fills it automatically:
 
 ```python
 data_client = vectorsearch_v1beta.DataObjectServiceClient()
@@ -178,7 +180,7 @@ No embedding pipeline to maintain. No vector synchronization to worry about.
 
 ## Step 3: Build the Hybrid Search Tool
 
-Now we create the function that our ADK agent will call. This function performs **hybrid search**—combining semantic understanding with keyword matching—and applies metadata filters:
+Now we create a Python function that serves as an [ADK Function Tool](https://google.github.io/adk-docs/tools/function-tools/)—a capability the agent can invoke to interact with external systems. ADK automatically converts Python functions into tools that the LLM can call, using the function's name, docstring, and type hints to generate the tool schema. This function performs **hybrid search**—combining semantic understanding with keyword matching—and applies metadata filters:
 
 ```python
 import json
@@ -267,7 +269,7 @@ Notice the `task_type` parameters:
 - `RETRIEVAL_DOCUMENT` during indexing (Step 1)
 - `QUESTION_ANSWERING` during search (Step 3)
 
-This asymmetric pairing is crucial for search quality. It tells the embedding model that queries and documents have different semantic structures—"What's good for remote work?" should match "Quiet flat with dedicated desk and fast WiFi" even though they share few words.
+This asymmetric pairing is crucial for search quality. It tells the embedding model that queries and documents have different semantic structures—"What's good for remote work?" should match "Quiet flat with dedicated desk and fast WiFi" even though they share few words. For a deeper dive into how task types improve search quality, see the [Task Type Embedding notebook](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/embeddings/task-type-embedding.ipynb).
 
 ### Filter Syntax
 
@@ -288,7 +290,7 @@ The function accepts a JSON filter string with MongoDB-style operators:
 ]}
 ```
 
-Filters apply *before* the vector search, ensuring all results meet the criteria.
+Filters apply *before* the vector search, ensuring all results meet the criteria. (Note: Currently, Vector Search 2.0 supports filtering only for semantic search, not for text search.)
 
 ## Step 4: Create the ADK Agent
 
@@ -333,7 +335,19 @@ travel_agent = Agent(
 runner = InMemoryRunner(agent=travel_agent, app_name="travel_agent")
 ```
 
-The agent's instruction teaches it how to use the filter syntax and decompose user requests. ADK handles the rest: prompt formatting, tool calling, response generation, and conversation state.
+Let's break down the key parts of the agent instruction:
+
+| Section | Purpose |
+|---------|---------|
+| **Role definition** | "You are an expert London Travel Agent" establishes the agent's persona and domain expertise, guiding tone and behavior |
+| **Tool description** | Explains the `find_rentals` tool and its two arguments—`query` for semantic search, `filter` for metadata constraints |
+| **Available filter fields** | Lists the exact field names and types the agent can use, preventing hallucinated filter fields |
+| **Filter syntax examples** | Provides concrete JSON patterns the agent can follow, reducing errors in filter construction |
+| **Guidelines** | Teaches the agent to decompose user requests—semantic intent goes to `query`, structured constraints go to `filter` |
+
+This instruction design follows a key principle: **be explicit about what the tool can and cannot do**. By listing the exact filter fields and providing syntax examples, we minimize the chance of the agent constructing invalid queries. The LLM doesn't need to guess—it has a clear template to follow.
+
+ADK handles the rest: prompt formatting, tool calling, response generation, and conversation state.
 
 ## Step 5: Test the Agent
 
@@ -388,7 +402,7 @@ The agent produces nearly identical results despite different phrasing—demonst
 
 ## The Complete Picture
 
-In under 200 lines of code, we built a production-ready travel agent that:
+In about 10 minutes, we built a production-ready travel agent that:
 
 - **Understands natural language** queries with complex constraints
 - **Searches semantically** using auto-generated embeddings
@@ -404,11 +418,24 @@ In under 200 lines of code, we built a production-ready travel agent that:
 | **ADK Agent** | Intent parsing, tool orchestration, conversation management |
 | **Your code** | A single `find_rentals` function + agent instructions |
 
+### Taking It Further
+
+This travel agent is a basic foundation for an Agentic RAG system. From here, you can extend it with advanced features:
+
+| Feature | Description | Learn More |
+|---------|-------------|------------|
+| **Multi-agent orchestration** | Decompose complex tasks across specialized agents (e.g., search agent, booking agent, recommendation agent) | [ADK Multi-Agent Systems](https://google.github.io/adk-docs/agents/multi-agents/) |
+| **Long-term memory** | Remember user preferences across sessions for personalized recommendations | [ADK Memory Services](https://google.github.io/adk-docs/sessions/memory/) |
+| **Streaming responses** | Stream results to users in real-time for better perceived latency | [ADK Bidi-streaming](https://google.github.io/adk-docs/streaming/) |
+| **Session persistence** | Store conversation history in databases for multi-turn interactions | [ADK Session Management](https://google.github.io/adk-docs/sessions/session/) |
+| **Agent evaluation** | Test agent behavior systematically with ADK's evaluation framework | [ADK Evaluation](https://google.github.io/adk-docs/evaluate/) |
+| **Production indexes** | Add ANN indexes for sub-10ms latency at billion-scale | [Vector Search 2.0 Indexes](https://cloud.google.com/vertex-ai/docs/vector-search-2/indexes/indexes) |
+
 ## Try It Yourself
 
 Ready to build your own Agentic RAG system?
 
-**Quick start:** [Travel Agent Notebook](resources/vectorsearch2_travel_agent.ipynb) — Run in Colab with one click. Load real Airbnb data, build the agent, and test queries in minutes.
+**Quick start:** [Travel Agent Notebook](https://github.com/google/adk-samples/blob/main/python/notebooks/grounding/vectorsearch2_travel_agent.ipynb) — Run in Colab with one click. Load real Airbnb data, build the agent, and test queries in minutes.
 
 **Learn more:**
 - [Vector Search 2.0 Introduction](../20251203_vs20_intro/article.md) — Deep dive into Vector Search 2.0 features
