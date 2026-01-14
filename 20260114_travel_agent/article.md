@@ -464,7 +464,7 @@ Ready to build your own Agentic RAG system?
 
 ---
 
-Agentic RAG is evolving rapidly. Advanced patterns like Self-RAG (self-correcting retrieval), CRAG (retrieval validation with fallbacks), and Adaptive RAG (complexity-based routing) represent the cutting edge of AI system design. What they all share is a common foundation: an intelligent retrieval layer paired with an agent that can reason, plan, and orchestrate.
+Agentic RAG is evolving rapidly. The advanced patterns in the table above reflect emerging best practices for building AI systems that deliver better user experiences. What they all share is a common foundation: an intelligent retrieval layer paired with an agent that can reason, plan, and orchestrate.
 
 That's exactly what Vector Search 2.0 and ADK provide. Vector Search 2.0 handles the retrieval infrastructure—embeddings, hybrid search, filtering, and scaling. ADK handles the reasoning layer—intent parsing, tool orchestration, and response synthesis. Together, they give you a solid foundation to build production Agentic RAG systems, from simple assistants to sophisticated multi-agent architectures.
 
