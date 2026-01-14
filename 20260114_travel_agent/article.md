@@ -4,20 +4,24 @@ In my [previous post](https://medium.com/google-cloud/introducing-vertex-ai-vect
 
 But what if you could take those benefits further—and build a complete **AI agent** that retrieves, reasons, and responds conversationally? That's exactly what happens when you combine Vector Search 2.0 with **[Agent Development Kit (ADK)](https://google.github.io/adk-docs/)**, Google's open-source framework for building AI agents.
 
-In this post, I'll show you how to build a fully functional Agentic RAG system in about 10 minutes—a travel agent that searches 2,000 London Airbnb listings using natural language.
+The shift from traditional "retrieve-then-generate" RAG to **Agentic RAG**—where an AI agent plans, reasons, and iteratively refines its search—is transforming how enterprises build AI systems. Vector Search 2.0 provides the intelligent retrieval layer; ADK provides the reasoning layer. Together, they form a solid foundation for building production-grade Agentic RAG systems.
+
+In this post, I'll show you how to build a solid foundation for Agentic RAG system in about 10 minutes—a travel agent that searches 2,000 London Airbnb listings using natural language.
 
 ![Travel Agent](assets/travel_agent_thumbnail.jpeg)
 
 ## The Agentic RAG Challenge
 
-Traditional RAG (Retrieval-Augmented Generation) follows a simple pattern: embed a query, search a vector database, pass results to an LLM, generate a response. It works well for straightforward Q&A but falls short when users need more sophisticated interactions.
+Traditional RAG (Retrieval-Augmented Generation) follows a simple pattern: pass the user query to a retrieval engine as-is, fetch relevant documents, and have an LLM summarize the results. The LLM's role is largely mechanical—it doesn't parse intent, construct filters, or decide *how* to search. This works for simple search tasks but falls short when users need more sophisticated interactions.
 
 Consider a travel agent scenario. A user asks: *"Find me a creative artist workspace in Hackney under £200 that I can book instantly."* This single request requires:
 
 1. **Intent parsing**: Extract "creative artist workspace" as the semantic query
 2. **Constraint extraction**: Identify filters (neighborhood=Hackney, price<200, instant_bookable=true)
 3. **Tool orchestration**: Call the right search with the right parameters
-4. **Result synthesis**: Present findings in a helpful, conversational format
+4. **Result synthesis**: Present results with context on why they're relevant
+
+This is what separates Agentic RAG from traditional RAG: the AI doesn't just retrieve and summarize—it *reasons* about how to fulfill the user's intent.
 
 Building this from scratch means stitching together multiple systems:
 
@@ -46,6 +50,21 @@ The combination of **Vertex AI Vector Search 2.0** and **Agent Development Kit (
 | **AgentOps** | [Vertex AI Agent Engine](https://cloud.google.com/products/agent-engine) provides managed deployment, scaling, observability, and enterprise security for ADK agents |
 
 In this post, I'll walk through the [Travel Agent notebook](https://github.com/google/adk-samples/blob/main/python/notebooks/grounding/vectorsearch2_travel_agent.ipynb), which demonstrates this architecture by building a vacation rental search agent using real Airbnb data.
+
+### The Reasoning Layer: What ADK Adds
+
+Vector Search 2.0 provides intelligent retrieval, but it's ADK that makes the system *agentic*. The key insight is that ADK adds a **reasoning layer** on top of retrieval—transforming a search API into an AI assistant that understands intent, orchestrates searches, and synthesizes responses.
+
+Here's what the agent does when a user asks *"Find me a creative artist workspace in Hackney under £200"*:
+
+| Capability | What the Agent Does |
+|------------|---------------------|
+| **Intent Parsing** | Decomposes natural language into semantic query ("creative artist workspace") and structured constraints (neighborhood, price) |
+| **Semantic Filtering** | Translates "Hackney under £200" into a structured filter syntax that Vector Search 2.0 can interpret: `{"$and": [{"neighborhood": {"$eq": "Hackney"}}, {"price": {"$lt": 200}}]}` |
+| **Tool Invocation** | Calls `find_rentals(query="creative artist workspace", filter=...)` dynamically with correctly formatted parameters |
+| **Response Synthesis** | Transforms raw JSON results into a friendly, conversational recommendation and present them with context on why they're relevant |
+
+This reasoning capability provides a solid foundation of various Agentic RAG systems. The same architecture extends to self-correcting search (via callbacks), adaptive query routing (via sub-agents), and multi-source retrieval (via multiple tools)—as we'll see in the "Taking It Further" section.
 
 ## What We're Building
 
@@ -418,17 +437,18 @@ The agent is made of the following components:
 
 ### Taking It Further
 
-This travel agent is a basic foundation for an Agentic RAG system. From here, you can extend it with advanced features:
+This travel agent demonstrates the core reasoning capability for a foundation for various Agentic RAG systems. The same architectural foundation extends to advanced patterns discussed in current AI research:
 
-| Feature | Description | Learn More |
-|---------|-------------|------------|
-| **Multi-agent orchestration** | Decompose complex tasks across specialized agents (e.g., search agent, booking agent, recommendation agent) | [ADK Multi-Agent Systems](https://google.github.io/adk-docs/agents/multi-agents/) |
-| **Session persistence** | Store conversation history in databases for multi-turn interactions | [ADK Session Management](https://google.github.io/adk-docs/sessions/session/) |
-| **Long-term memory** | Remember user preferences across sessions for personalized recommendations | [ADK Memory Services](https://google.github.io/adk-docs/sessions/memory/) |
-| **Managed deployment** | Deploy to production with built-in scaling, observability, and enterprise security | [Vertex AI Agent Engine](https://cloud.google.com/products/agent-engine) |
-| **Real-time voice and image streaming** | Bidirectional voice and image communication in real-time | [ADK Bidi-streaming](https://google.github.io/adk-docs/streaming/) |
-| **Agent evaluation** | Test agent behavior systematically with ADK's evaluation framework | [ADK Evaluation](https://google.github.io/adk-docs/evaluate/) |
-| **Production indexes** | Add ANN indexes for sub-10ms latency at billion-scale | [Vector Search 2.0 Indexes](https://cloud.google.com/vertex-ai/docs/vector-search-2/indexes/indexes) |
+| Extension | Agentic RAG Pattern | How to Build with VS2.0 + ADK | Learn More |
+|-----------|---------------------|-------------------------------|------------|
+| **Parallel Query Strategies** | Query Expansion / HyDE | With ANN indexes providing sub-10ms latency, a sub-agent can generate multiple query variations and run them in parallel | [VS2.0 Indexes](https://cloud.google.com/vertex-ai/docs/vector-search-2/indexes/indexes) |
+| **Self-Correcting Search** | Self-RAG / CRAG | Add `before_tool_callback` to grade retrieval relevance; re-query with refined terms if score is low | [ADK Callbacks](https://google.github.io/adk-docs/callbacks/) |
+| **Adaptive Query Routing** | Adaptive RAG | Use a router agent to classify query complexity; route simple queries to direct LLM, complex ones to full RAG pipeline | [ADK Multi-Agent](https://google.github.io/adk-docs/agents/multi-agents/) |
+| **Multi-Collection Search** | Multi-Source RAG | Create separate VS2.0 Collections (policies, products, FAQs); agent selects collection based on intent | [VS2.0 Collections](https://cloud.google.com/vertex-ai/docs/vector-search-2/collections/collections) |
+| **Real-time Voice Interface** | Multimodal / Interactive RAG | Enable bidi-streaming for voice queries; supports human-in-the-loop patterns for confirmation and clarification | [ADK Streaming](https://google.github.io/adk-docs/streaming/) |
+| **Knowledge Graph Augmentation** | GraphRAG | Add a Spanner graph tool for structured entity relationships alongside vector search | [GraphRAG with Spanner](https://cloud.google.com/architecture/gen-ai-graphrag-spanner) |
+| **Session & Long-Term Memory** | Stateful / Personalized RAG | Use `SessionService` for multi-turn context; use `MemoryService` to remember user preferences across sessions | [ADK Sessions & Memory](https://google.github.io/adk-docs/sessions/session/) |
+| **Production Observability** | Enterprise RAG | Deploy to Agent Engine with built-in tracing, cost tracking, and guardrails | [Agent Engine](https://cloud.google.com/products/agent-engine) |
 
 ## Try It Yourself
 
@@ -444,6 +464,8 @@ Ready to build your own Agentic RAG system?
 
 ---
 
-Agentic RAG used to require stitching together vector databases, embedding pipelines, agent frameworks, and custom integration code. Vector Search 2.0 handles the infrastructure; ADK handles the orchestration. Together, they replace that complexity with a seamless developer experience.
+Agentic RAG is evolving rapidly. Advanced patterns like Self-RAG (self-correcting retrieval), CRAG (retrieval validation with fallbacks), and Adaptive RAG (complexity-based routing) represent the cutting edge of AI system design. What they all share is a common foundation: an intelligent retrieval layer paired with an agent that can reason, plan, and orchestrate.
 
-The gap between "I want to build an AI agent" and "I have a working agent" just got a lot smaller.
+That's exactly what Vector Search 2.0 and ADK provide. Vector Search 2.0 handles the retrieval infrastructure—embeddings, hybrid search, filtering, and scaling. ADK handles the reasoning layer—intent parsing, tool orchestration, and response synthesis. Together, they give you a solid foundation to build production Agentic RAG systems, from simple assistants to sophisticated multi-agent architectures.
+
+The travel agent in this post is just the starting point. The same patterns scale to enterprise-grade AI systems.
