@@ -1,4 +1,4 @@
-# Building Agentic RAG with Vector Search 2.0 and Agent Development Kit
+# Agentic RAG Simplified: Fully Managed Retrieval and Reasoning in Under 200 Lines of Code
 
 In my [previous post](../20251203_vs20_intro/article.md), I introduced Vertex AI Vector Search 2.0 and showed how it simplifies building production-ready semantic search. But search is just one piece of the puzzle. The real challenge comes when you want to build **AI agents** that can autonomously retrieve information, reason about it, and take action.
 
@@ -388,7 +388,7 @@ The agent produces nearly identical results despite different phrasing—demonst
 
 ## The Complete Picture
 
-In about 100 lines of code, we built a production-ready travel agent that:
+In under 200 lines of code, we built a production-ready travel agent that:
 
 - **Understands natural language** queries with complex constraints
 - **Searches semantically** using auto-generated embeddings
