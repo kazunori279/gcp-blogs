@@ -21,14 +21,14 @@ Consider a travel agent scenario. A user asks: *"Find me a creative artist works
 
 Building this from scratch means stitching together multiple systems:
 
-![Agentic RAG Challenges](assets/agentic_rag_challenges.jpeg)
-
 | Challenge | What You Need to Build |
 |-----------|----------------------|
 | **Vector search infrastructure** | Embedding pipelines, vector indexes, metadata storage, hybrid search |
 | **Agent framework** | Prompt management, tool calling, conversation state, error handling |
 | **Glue code** | Custom integration between your agent and your search backend |
 | **AgentOps** | Session management, memory persistence, production deployment |
+
+![Agentic RAG Challenges](assets/agentic_rag_challenges.jpeg)
 
 Each layer adds complexity. Each integration point is a potential failure mode. And you haven't even started building your actual product yet.
 
