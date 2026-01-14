@@ -444,6 +444,6 @@ Ready to build your own Agentic RAG system?
 
 ---
 
-Agentic RAG used to require stitching together vector databases, embedding pipelines, agent frameworks, and custom integration code. Vector Search 2.0 and ADK replace that complexity with two managed services that work together seamlessly.
+Agentic RAG used to require stitching together vector databases, embedding pipelines, agent frameworks, and custom integration code. Vector Search 2.0 handles the infrastructure; ADK handles the orchestration. Together, they replace that complexity with a seamless developer experience.
 
 The gap between "I want to build an AI agent" and "I have a working agent" just got a lot smaller.
