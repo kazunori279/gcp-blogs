@@ -4,9 +4,9 @@ In my [previous post](https://medium.com/google-cloud/introducing-vertex-ai-vect
 
 But what if you could take those benefits further—and build a complete **AI agent** that retrieves, reasons, and responds conversationally? That's exactly what happens when you combine Vector Search 2.0 with **[Agent Development Kit (ADK)](https://google.github.io/adk-docs/)**, Google's open-source framework for building AI agents.
 
-The shift from traditional "retrieve-then-generate" RAG to **Agentic RAG**—where an AI agent plans, reasons, and iteratively refines its search—is transforming how enterprises build AI systems. Vector Search 2.0 provides the intelligent retrieval layer; ADK provides the reasoning layer. Together, they form a solid foundation for building production-grade Agentic RAG systems.
+The shift from simple "retrieve-then-generate" RAG to **Agentic RAG**—where an AI agent plans, reasons, and iteratively refines its search—is transforming how enterprises build AI systems. Vector Search 2.0 provides the intelligent retrieval layer; ADK provides the reasoning layer. Together, they form a solid foundation for building production-grade Agentic RAG systems.
 
-In this post, I'll show you how to build a solid foundation for Agentic RAG system in about 10 minutes—a travel agent that searches 2,000 London Airbnb listings using natural language.
+In this post, I'll show you how to build a basic Agentic RAG system in about 10 minutes—a travel agent that searches 2,000 London Airbnb listings using natural language.
 
 ![Travel Agent](assets/travel_agent_thumbnail.jpeg)
 
