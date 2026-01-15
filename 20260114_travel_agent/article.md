@@ -12,7 +12,7 @@ In this post, I'll show you how to build a solid foundation for Agentic RAG syst
 
 ## The Agentic RAG Challenge
 
-Traditional RAG (Retrieval-Augmented Generation) follows a simple pattern: pass the user query to a retrieval engine as-is, fetch relevant documents, and have an LLM summarize the results. The LLM's role is largely mechanical—it doesn't parse intent, construct filters, or decide *how* to search. This works for simple search tasks but falls short when users need more sophisticated interactions.
+Many simple RAG (Retrieval-Augmented Generation) systems follow a straightforward pattern: pass the user query to a retrieval engine as-is, fetch relevant documents, and have an LLM summarize the results. The LLM's role is largely mechanical—it doesn't parse intent, construct filters, or decide *how* to search. This works for simple search tasks but falls short when users need more sophisticated interactions.
 
 Consider a travel agent scenario. A user asks: *"Find me a creative artist workspace in Hackney under £200 that I can book instantly."* This single request requires:
 
@@ -40,8 +40,6 @@ Each layer adds complexity. Each integration point is a potential failure mode. 
 
 The combination of **Vertex AI Vector Search 2.0** and **Agent Development Kit (ADK)** eliminates this integration overhead. Vector Search 2.0 provides the intelligent retrieval layer; ADK provides the agent orchestration. Together, they let you focus on your use case instead of infrastructure.
 
-![VS2.0 + ADK Solution](assets/vs20_adk_solution.jpeg)
-
 | Challenge | Solution |
 |-----------|----------|
 | **Vector search infrastructure** | Vector Search 2.0 handles embeddings, storage, indexing, and hybrid search in one managed service |
@@ -49,9 +47,19 @@ The combination of **Vertex AI Vector Search 2.0** and **Agent Development Kit (
 | **Glue code** | A single Python function wraps your search as an ADK tool—the agent handles the rest |
 | **AgentOps** | [Vertex AI Agent Engine](https://cloud.google.com/products/agent-engine) provides managed deployment, scaling, observability, and enterprise security for ADK agents |
 
+![VS2.0 + ADK Solution](assets/vs20_adk_solution.png)
+
 In this post, I'll walk through the [Travel Agent notebook](https://github.com/google/adk-samples/blob/main/python/notebooks/grounding/vectorsearch2_travel_agent.ipynb), which demonstrates this architecture by building a vacation rental search agent using real Airbnb data.
 
-### The Reasoning Layer: What ADK Adds
+## Building the Reasoning Layer with ADK
+
+Our travel agent will search 2,000 London Airbnb listings using natural language. Users can ask questions like:
+
+- *"Find me an inspiring workspace in Hackney"*
+- *"I want a cozy flat with a garden under £150"*
+- *"Show me artist lofts in Shoreditch that I can book instantly"*
+
+Each of these queries blends semantic intent with structured constraints. The agent needs to understand what the user wants, figure out how to search for it, and present results that actually fit.
 
 Vector Search 2.0 provides intelligent retrieval, but it's ADK that makes the system *agentic*. The key insight is that ADK adds a **reasoning layer** on top of retrieval—transforming a search API into an AI assistant that understands intent, orchestrates searches, and synthesizes responses.
 
@@ -60,39 +68,26 @@ Here's what the agent does when a user asks *"Find me a creative artist workspac
 | Capability | What the Agent Does |
 |------------|---------------------|
 | **Intent Parsing** | Decomposes natural language into semantic query ("creative artist workspace") and structured constraints (neighborhood, price) |
-| **Semantic Filtering** | Translates "Hackney under £200" into a structured filter syntax that Vector Search 2.0 can interpret: `{"$and": [{"neighborhood": {"$eq": "Hackney"}}, {"price": {"$lt": 200}}]}` |
+| **Building filter** | Translates "Hackney under £200" into a structured filter syntax that Vector Search 2.0 can interpret: `{"$and": [{"neighborhood": {"$eq": "Hackney"}}, {"price": {"$lt": 200}}]}` |
 | **Tool Invocation** | Calls `find_rentals(query="creative artist workspace", filter=...)` dynamically with correctly formatted parameters |
 | **Response Synthesis** | Transforms raw JSON results into a friendly, conversational recommendation and present them with context on why they're relevant |
 
+![Reasoning Layer](assets/reasoning_layer.jpeg)
+
 This reasoning capability provides a solid foundation of various Agentic RAG systems. The same architecture extends to self-correcting search (via callbacks), adaptive query routing (via sub-agents), and multi-source retrieval (via multiple tools)—as we'll see in the "Taking It Further" section.
 
-## What We're Building
+### The four steps to build
 
-Our travel agent will search 2,000 London Airbnb listings using natural language. Users can ask questions like:
-
-- *"Find me an inspiring workspace in Hackney"*
-- *"I want a cozy flat with a garden under £150"*
-- *"Show me artist lofts in Shoreditch that I can book instantly"*
-
-The agent will:
-1. Parse user request into semantic queries and metadata filters
-2. Execute hybrid search (semantic + keyword) with filtering as a Tool call
-3. Receive search results
-4. Present results conversationally
-
-![Architecture Overview](assets/architecture_overview.jpeg)
-
-To build this, we'll follow five steps:
+To build this, we'll follow four steps:
 
 1. **Create a Collection** — Define the data schema and configure auto-embeddings
 2. **Ingest Data** — Load Airbnb listings with automatic vector generation
 3. **Build the Search Tool** — Create a Python function for hybrid search
 4. **Create the ADK Agent** — Wire the tool to an LLM with instructions
-5. **Test the Agent** — Run natural language queries and see results
-
-This might look like a lot, but thanks to Vector Search 2.0 and ADK handling the heavy lifting, you'll be done in about 10 minutes.
 
 ![Steps](assets/steps.jpeg)
+
+This might look like a lot, but thanks to Vector Search 2.0 and ADK handling the heavy lifting, you'll be done in about 10 minutes.
 
 ## Step 1: Create a Collection with Auto-Embeddings
 
@@ -415,7 +410,7 @@ await runner.run_debug(
 
 The agent produces nearly identical results despite different phrasing—demonstrating robust intent understanding.
 
-## The Complete Picture
+## Putting It All Together
 
 In about 10 minutes, we built a solid foundation for production-level travel agent that:
 
@@ -433,8 +428,6 @@ The agent is made of the following components:
 | **ADK Agent** | Intent parsing, tool orchestration, conversation management |
 | **Your code** | A single `find_rentals` function + agent instructions |
 
-![complete_picture](assets/complete_picture.jpeg)
-
 ### Taking It Further
 
 This travel agent demonstrates the core reasoning capability for a foundation for various Agentic RAG systems. The same architectural foundation extends to advanced patterns discussed in current AI research:
@@ -449,6 +442,8 @@ This travel agent demonstrates the core reasoning capability for a foundation fo
 | **Knowledge Graph Augmentation** | GraphRAG | Add a Spanner graph tool for structured entity relationships alongside vector search | [GraphRAG with Spanner](https://cloud.google.com/architecture/gen-ai-graphrag-spanner) |
 | **Session & Long-Term Memory** | Stateful / Personalized RAG | Use `SessionService` for multi-turn context; use `MemoryService` to remember user preferences across sessions | [ADK Sessions & Memory](https://google.github.io/adk-docs/sessions/session/) |
 | **Production Observability** | Enterprise RAG | Deploy to Agent Engine with built-in tracing, cost tracking, and guardrails | [Agent Engine](https://cloud.google.com/products/agent-engine) |
+
+![Advanced Agentic RAG](assets/advanced_agentic_rag.jpeg)
 
 ## Try It Yourself
 
