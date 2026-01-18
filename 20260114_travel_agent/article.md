@@ -1,6 +1,6 @@
 # 10-Minute Agentic RAG with the New Vector Search 2.0 and ADK
 
-In my [previous post](https://medium.com/google-cloud/introducing-vertex-ai-vector-search-2-0-from-zero-to-billion-scale-90ed666dac43), I showed how the new [Vertex AI Vector Search 2.0](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview) eliminates the hardest parts of building semantic search: **auto-embeddings** remove the need for embedding pipelines, **unified storage** eliminates the separate feature store, **self-tuning indexes** handle ANN configuration automatically, and **[built-in hybrid search](https://cloud.google.com/vertex-ai/docs/vector-search-2/query-search/search)** combines semantic and keyword matching in one API call.
+In my [previous post](https://medium.com/google-cloud/introducing-vertex-ai-vector-search-2-0-from-zero-to-billion-scale-90ed666dac43), I showed how the new [Vertex AI Vector Search 2.0](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview) eliminates the hardest parts of building semantic search: **auto-embeddings** remove the need for embedding pipelines, **unified storage** eliminates the separate feature store, **self-tuning indexes** handle ANN configuration automatically, and **built-in hybrid search** combines semantic and keyword matching in one API call.
 
 But what if you could take those benefits further—and build a complete **AI agent** that retrieves, reasons, and responds conversationally? That's exactly what happens when you combine Vector Search 2.0 with **[Agent Development Kit (ADK)](https://google.github.io/adk-docs/)**, Google's open-source framework for building AI agents.
 
@@ -225,6 +225,7 @@ def find_rentals(query: str, filter: str = "") -> List[Dict[str, Any]]:
     text_search = vectorsearch_v1beta.TextSearch(
         search_text=query,
         data_field_names=["name", "description", "neighborhood_overview"],
+        filter=filter_dict,
         top_k=10,
         output_fields=vectorsearch_v1beta.OutputFields(
             data_fields=["name", "price", "neighborhood", "listing_url"]
