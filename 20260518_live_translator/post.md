@@ -308,39 +308,6 @@ Known issues:
 - **GoAway mid-utterance can drop translations** — If a session expires while the user is speaking, that utterance may be lost (~1-2% in long sessions). The next utterance translates normally.
 - **Turn completion takes 5-7 seconds** — This includes the full audio playback time, not just processing latency. First response (when audio starts playing) is near-instant for most utterances.
 
-### Running Your Own Tests
-
-```bash
-# Quick 2-minute smoke test against local server
-uv run python tests/test_long.py --duration 120
-
-# Full 1-hour test against Cloud Run
-uv run python tests/test_long.py \
-  --url wss://YOUR_CLOUD_RUN_URL \
-  --duration 3600 \
-  --source en \
-  --target ja
-```
-
-## Deployment
-
-Live Translator deploys to Cloud Run with a few key configuration flags:
-
-```bash
-gcloud run deploy live-translation \
-  --source . \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --timeout 3600 \
-  --min-instances 1 \
-  --max-instances 1 \
-  --set-env-vars "GOOGLE_API_KEY=${GOOGLE_API_KEY}"
-```
-
-- `--timeout 3600`: Allows hour-long WebSocket conversations (internal Live sessions cycle every ~15 minutes)
-- `--min-instances 1`: Avoids cold start latency
-- `--max-instances 1`: Session state is in-memory; multi-replica requires a shared store like Redis
-
 ## Conclusion
 
 Building a real-time translator with Gemini Live API eliminates the complexity of chaining separate STT, translation, and TTS systems. The direct audio-to-audio approach reduces latency and preserves nuances like tone and emphasis that text-based pipelines lose.
