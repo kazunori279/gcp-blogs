@@ -59,7 +59,29 @@ Browser                          Server (FastAPI)                 Gemini Live AP
 
 ### The Browser Layer
 
-The frontend captures audio from the microphone using the Web Audio API, resamples it to 16kHz mono PCM (the format Gemini Live API expects), and streams it over a WebSocket connection. On the receiving end, it plays back 24kHz PCM audio and renders transcription bubbles.
+The frontend captures audio from the microphone using the Web Audio API, resamples it to 16kHz mono PCM (the format Gemini Live API expects), and streams it over a WebSocket connection:
+
+```javascript
+async function startAudioRecorderWorklet(audioRecorderHandler, deviceId) {
+  const audioContext = new AudioContext({ sampleRate: 16000 });
+  await audioContext.audioWorklet.addModule("./pcm-recorder-processor.js");
+
+  const constraints = { audio: { channelCount: 1 } };
+  if (deviceId) constraints.audio.deviceId = { exact: deviceId };
+  const micStream = await navigator.mediaDevices.getUserMedia(constraints);
+  const source = audioContext.createMediaStreamSource(micStream);
+
+  const recorderNode = new AudioWorkletNode(audioContext, "pcm-recorder-processor");
+  source.connect(recorderNode);
+  
+  recorderNode.port.onmessage = (event) => {
+    const pcmData = convertFloat32ToPCM(event.data);
+    audioRecorderHandler(pcmData);  // Send to WebSocket
+  };
+}
+```
+
+On the receiving end, it plays back 24kHz PCM audio and renders transcription bubbles.
 
 ### The FastAPI Server
 
