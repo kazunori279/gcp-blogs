@@ -44,6 +44,22 @@ The third column is optional—it's a display override. The model pronounces the
 
 ## Architecture Deep Dive
 
+### What is Gemini Live API?
+
+The [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api) enables low-latency, bidirectional streaming with Gemini models over WebSockets. Unlike traditional voice AI stacks that chain separate speech-to-text, language model, and text-to-speech components, the Live API processes audio end-to-end in a single model—audio in, audio out.
+
+Live Translator uses [`gemini-3.1-flash-live-preview`](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview), the latest audio-to-audio model optimized for real-time dialogue. Key capabilities that make it ideal for translation:
+
+- **Native audio understanding**: The model processes speech directly, preserving acoustic nuances like pitch, pace, and emphasis that text-based pipelines lose
+- **Sub-second latency**: Responses begin streaming immediately, enabling natural conversational flow
+- **90+ language support**: Broad multilingual coverage with strong cross-lingual transfer
+- **Barge-in support**: Users can interrupt mid-sentence; the model halts and processes new input immediately
+- **Built-in transcription**: Both input and output audio can be transcribed automatically, no separate ASR needed
+
+The model handles the entire translation pipeline—listening, understanding, translating, and speaking—in one forward pass. This is what enables a production-quality translator with just a short system instruction.
+
+### System Architecture
+
 The app follows a straightforward architecture with three main components:
 
 ```
