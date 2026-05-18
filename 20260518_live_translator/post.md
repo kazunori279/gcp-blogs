@@ -30,6 +30,8 @@ For more control, toggle **Push to Talk** mode. Hold the button (or press spaceb
 
 ### The Glossary Feature
 
+![Glossary UI](glossary_ui.jpg)
+
 Technical presentations often include terms that general translation models struggle with. The glossary feature solves this by letting you define exact translations for specific terms.
 
 Upload a CSV file with `source,target,transcription` columns:
