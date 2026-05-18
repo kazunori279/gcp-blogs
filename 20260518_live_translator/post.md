@@ -384,4 +384,12 @@ If you're building real-time audio applications with Gemini Live API, consider:
 3. Build comprehensive soak tests that run for hours, not minutes
 4. Use custom glossaries for domain-specific terminology
 
-The full source code is available on GitHub. Try it out, and let us know what you build.
+### Get Started
+
+- **[Live Translator source code](https://github.com/kazunori279/live-translator)** — Clone, deploy, and customize
+- **[Gemini Live API documentation](https://ai.google.dev/gemini-api/docs/live-api)** — Bidirectional audio streaming with Gemini models
+- **[Google GenAI SDK](https://ai.google.dev/gemini-api/docs/downloads)** — Python and Node.js client libraries for the Gemini API
+- **[Gemini API quickstart](https://ai.google.dev/gemini-api/docs/quickstart)** — Get your API key and make your first call
+- **[Cloud Run](https://cloud.google.com/run/docs/quickstarts)** — Deploy containerized apps with managed infrastructure
+- **[Cloud Text-to-Speech](https://cloud.google.com/text-to-speech/docs/quickstart)** — Convert text to natural-sounding speech
+- **[Cloud Speech-to-Text](https://cloud.google.com/speech-to-text/docs/quickstart)** — Transcribe audio to text
