@@ -369,7 +369,8 @@ Key takeaways:
 - **Zero errors** over the full hour
 
 Known issues:
-- **Output transcription accuracy is lower than translation quality** — 88.4% scored 9-10, with occasional misses (1% at 0-2). The translated audio is correct, but the API's transcription of that audio sometimes diverges. This is a current limitation of the model's output transcription capability.- **GoAway mid-utterance can drop translations** — If a session expires while the user is speaking, that utterance may be lost (~1-2% in long sessions). The next utterance translates normally.
+- **Output transcription accuracy is lower than translation quality** — 88.4% scored 9-10, with occasional misses (1% at 0-2). The translated audio is correct, but the API's transcription of that audio sometimes diverges. This is a current limitation of the model's output transcription capability.
+- **GoAway mid-utterance can drop translations** — If a session expires while the user is speaking, that utterance may be lost (~1-2% in long sessions). The next utterance translates normally.
 
 ## Conclusion
 
