@@ -6,7 +6,7 @@ In this post, I'll walk through Live Translator—an open-source app that transl
 
 ## What is Live Translator?
 
-![Live Translator Demo](demo.gif)
+![Live Translator Demo](assets/demo.gif)
 
 **[Try the live demo](https://live-translation-761793285222.us-central1.run.app/)**
 
@@ -30,7 +30,7 @@ For more control, toggle **Push to Talk** mode. Hold the button (or press spaceb
 
 ### The Glossary Feature
 
-![Glossary UI](glossary_ui.jpg)
+![Glossary UI](assets/glossary_ui.jpg)
 
 Technical presentations often include terms that general translation models struggle with. The glossary feature solves this by letting you define exact translations for specific terms.
 
@@ -64,16 +64,7 @@ The model handles the entire translation pipeline—listening, understanding, tr
 
 The app follows a straightforward architecture with three main components:
 
-```
-Browser                          Server (FastAPI)                 Gemini Live API
-  |                                  |                                |
-  |-- WebSocket /ws/{user}/{sid} --> |                                |
-  |   (binary PCM frames)            |-- client.aio.live.connect() -->|
-  |                                  |                                |
-  |                                  |<-- LiveServerMessage ----------|
-  |<-- JSON envelope ---------------- |                                |
-  |   (transcription, audio, etc.)   |                                |
-```
+![Sequence Diagram](assets/sequence_diagram.png)
 
 ### The Browser Layer
 
@@ -188,6 +179,8 @@ Output transcription streams word-by-word, enabling a typing indicator effect. I
 Here's where it gets interesting. Gemini Live API sessions expire after approximately 15 minutes. When a session is about to expire, the API sends a [`GoAway` message](https://ai.google.dev/gemini-api/docs/live-session) with a countdown (typically 30 seconds).
 
 A naive implementation would simply reconnect when the session dies, but this creates a gap—translations during the reconnection window are lost. Live Translator solves this with a pre-opening strategy:
+
+![GoAway Handling Diagram](assets/goaway_diagram.png)
 
 ### The Pre-Opening Strategy
 
