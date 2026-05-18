@@ -2,7 +2,7 @@
 
 Real-time translation has long been a challenging problem in AI. Traditional approaches required separate speech-to-text, translation, and text-to-speech pipelines, each adding latency and potential errors. With the Gemini Live API, we can now build a seamless, low-latency translation experience that processes audio directly.
 
-In this post, I'll walk through Live Translator—an open-source app that translates speech in real-time across 97 languages. We'll cover how to use it, dive deep into the architecture, and explore the engineering challenges of maintaining continuous sessions.
+In this post, I'll walk through Live Translator—an open-source app that translates speech in real-time across 97 languages. We'll cover how to use it, dive deep into the architecture, and explore the engineering challenges of maintaining continuous sessions. The interesting parts: how we handle session expiration to achieve seamless hour-long translations without gaps, and how we quantitatively measure translation quality and UX with automated soak tests that run for hours and score every utterance.
 
 ## What is Live Translator?
 
