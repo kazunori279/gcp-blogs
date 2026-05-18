@@ -152,6 +152,8 @@ def build_system_instruction(source_lang, target_lang, glossary_entries):
     )
 ```
 
+What's remarkable here is that this short instruction is all it takes to build a production-quality real-time translator. No separate speech recognition model, no translation model, no text-to-speech synthesis—just a few sentences describing the desired behavior. The Gemini Live API handles the entire audio-to-audio pipeline, maintaining natural prosody and tone while translating across 97 languages. This is the power of multimodal foundation models: complex pipelines collapse into simple prompts.
+
 ### Wire Format
 
 Each `LiveServerMessage` from the Gemini API is translated into a JSON envelope the frontend understands:
