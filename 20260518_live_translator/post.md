@@ -6,6 +6,8 @@ In this post, I'll walk through Live Translator—an open-source app that transl
 
 ## What is Live Translator?
 
+![Live Translator Demo](demo.gif)
+
 Live Translator is a web application that captures your voice, sends it to the Gemini Live API, and plays back the translation in real-time. The experience feels like having a simultaneous interpreter—you speak, and within seconds, you hear the translation.
 
 ### Key Features
