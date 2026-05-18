@@ -240,6 +240,60 @@ The test flow:
 4. Transcribe the returned audio using [Google Cloud STT](https://cloud.google.com/speech-to-text)
 5. Score semantic correctness with an LLM judge
 
+### LLM-as-a-Judge
+
+Each translation is scored by Gemini Flash Lite acting as an evaluator. The judge receives the original sentence and the translation, then returns a structured verdict:
+
+```python
+def verify_translation(client, original, translated, source, target):
+    resp = client.models.generate_content(
+        model="gemini-2.0-flash-lite",
+        contents=(
+            f"You are a translation quality evaluator. Compare the original "
+            f"{source} sentence with its {target} translation.\n\n"
+            f"Original ({source}): {original}\n"
+            f"Translation ({target}): {translated}\n\n"
+            f"Score the semantic accuracy from 0 to 10 (10 = perfect). "
+            f"Reply in exactly this format:\n"
+            f"SCORE: <number>\n"
+            f"PASS: <yes/no>\n"
+            f"REASON: <one sentence>"
+        ),
+    )
+    # Parse structured response
+    for line in resp.text.strip().splitlines():
+        if line.upper().startswith("SCORE:"):
+            score = float(line.split(":", 1)[1].strip().split("/")[0])
+        elif line.upper().startswith("PASS:"):
+            passed = "yes" in line.lower()
+        elif line.upper().startswith("REASON:"):
+            reason = line.split(":", 1)[1].strip()
+    return passed, score, reason
+```
+
+The structured `SCORE/PASS/REASON` format makes parsing reliable while still allowing the model to explain its reasoning. Using a small, fast model (Flash Lite) keeps evaluation cost low across hundreds of iterations.
+
+### Latency Measurement
+
+Latency is measured from the moment speech ends (the last PCM chunk is sent) to two milestones: when the first response arrives, and when the full translation is complete:
+
+```python
+# Mark when speech audio finishes sending
+speech_done_at.append(time.monotonic())
+
+# In the response handler:
+if has_content and not first_response_at:
+    first_response_at.append(time.monotonic())   # First audio/text chunk
+if msg.get("turnComplete"):
+    turn_complete_at.append(time.monotonic())     # Full translation done
+
+# Calculate latencies from speech end
+first_resp_sec = max(0.0, first_response_at[0] - speech_done_at[0])
+turn_comp_sec = max(0.0, turn_complete_at[0] - speech_done_at[0])
+```
+
+The `first_resp_sec` metric captures perceived responsiveness—how quickly the user hears something. The `turn_comp_sec` metric captures total delivery time including full audio playback. The `max(0.0, ...)` handles cases where the model starts responding before all audio has been sent.
+
 ### Latest Results (1 hour, English to Japanese, Cloud Run)
 
 ```
