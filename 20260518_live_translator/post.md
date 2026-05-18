@@ -1,6 +1,6 @@
 # Building a Real-Time Audio Translator with Gemini Live API
 
-Real-time translation has long been a challenging problem in AI. Traditional approaches required separate speech-to-text, translation, and text-to-speech pipelines, each adding latency and potential errors. With the Gemini Live API, we can now build a seamless, low-latency translation experience that processes audio directly.
+Real-time translation has long been a challenging problem in AI. Traditional approaches required separate speech-to-text, translation, and text-to-speech pipelines, each adding latency and potential errors. With the [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api), we can now build a seamless, low-latency translation experience that processes audio directly.
 
 In this post, I'll walk through Live Translator—an open-source app that translates speech in real-time across 97 languages. We'll cover how to use it, dive deep into the architecture, and explore the engineering challenges of maintaining continuous sessions. The interesting parts: how we handle session expiration to achieve seamless hour-long translations without gaps, and how we quantitatively measure translation quality and UX with automated soak tests that run for hours and score every utterance.
 
@@ -59,7 +59,7 @@ Browser                          Server (FastAPI)                 Gemini Live AP
 
 ### The Browser Layer
 
-The frontend captures audio from the microphone using the Web Audio API, resamples it to 16kHz mono PCM (the format Gemini Live API expects), and streams it over a WebSocket connection:
+The frontend captures audio from the microphone using the [Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API), resamples it to 16kHz mono PCM (the format Gemini Live API expects), and streams it over a WebSocket connection:
 
 ```javascript
 async function startAudioRecorderWorklet(audioRecorderHandler, deviceId) {
@@ -83,7 +83,7 @@ async function startAudioRecorderWorklet(audioRecorderHandler, deviceId) {
 
 On the receiving end, it plays back 24kHz PCM audio and renders transcription bubbles.
 
-### The FastAPI Server
+### The [FastAPI](https://fastapi.tiangolo.com/) Server
 
 The server acts as a bridge between the browser WebSocket and the Gemini Live API. This separation is necessary because:
 
@@ -99,7 +99,7 @@ When a client connects, the server:
 4. Opens a Gemini Live session with the configured instruction
 5. Runs two concurrent tasks: one forwarding audio upstream, one forwarding responses downstream
 
-The basic event loop for using the Live API follows this pattern:
+The basic event loop for using the Live API with the [Google GenAI SDK](https://ai.google.dev/gemini-api/docs/downloads) follows this pattern:
 
 ```python
 from google import genai
@@ -167,7 +167,7 @@ Output transcription streams word-by-word, enabling a typing indicator effect. I
 
 ## Handling GoAway: Session Continuity
 
-Here's where it gets interesting. Gemini Live API sessions expire after approximately 15 minutes. When a session is about to expire, the API sends a `GoAway` message with a countdown (typically 30 seconds).
+Here's where it gets interesting. Gemini Live API sessions expire after approximately 15 minutes. When a session is about to expire, the API sends a [`GoAway` message](https://ai.google.dev/gemini-api/docs/live-session) with a countdown (typically 30 seconds).
 
 A naive implementation would simply reconnect when the session dies, but this creates a gap—translations during the reconnection window are lost. Live Translator solves this with a pre-opening strategy:
 
@@ -204,7 +204,7 @@ The key insight: when GoAway arrives, we immediately start opening the next sess
 
 ### Why Not Session Resumption?
 
-The Gemini Live API supports session resumption—you can carry context from one session to the next. We initially implemented this, but discovered a subtle bug: the model would sometimes prepend the previous turn's translation to the current one, creating an "off-by-one" cascade.
+The Gemini Live API supports [session resumption](https://ai.google.dev/gemini-api/docs/live-session)—you can carry context from one session to the next. We initially implemented this, but discovered a subtle bug: the model would sometimes prepend the previous turn's translation to the current one, creating an "off-by-one" cascade.
 
 Without resumption, each session starts clean. This proved more reliable in testing: 98% pass rate vs. 65% with resumption in 1-hour soak tests. The tradeoff is that if GoAway fires mid-utterance, that translation may be lost. In practice, this affects roughly 1-2% of translations during long sessions—an acceptable rate given the improved reliability.
 
@@ -224,9 +224,9 @@ The soak test (`tests/test_long.py`) runs for extended periods (default: 1 hour)
 
 The test flow:
 1. Generate random English sentences using Gemini Flash Lite
-2. Convert to audio using Google Cloud TTS
+2. Convert to audio using [Google Cloud TTS](https://cloud.google.com/text-to-speech)
 3. Stream through the translator WebSocket
-4. Transcribe the returned audio using Google Cloud STT
+4. Transcribe the returned audio using [Google Cloud STT](https://cloud.google.com/speech-to-text)
 5. Score semantic correctness with an LLM judge
 
 ### Latest Results (1 hour, English to Japanese, Cloud Run)
