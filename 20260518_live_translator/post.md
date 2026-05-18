@@ -99,6 +99,44 @@ When a client connects, the server:
 4. Opens a Gemini Live session with the configured instruction
 5. Runs two concurrent tasks: one forwarding audio upstream, one forwarding responses downstream
 
+The basic event loop for using the Live API follows this pattern:
+
+```python
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+
+async def handle_session(websocket, system_instruction):
+    config = types.LiveConnectConfig(
+        response_modalities=[types.Modality.AUDIO],
+        input_audio_transcription=types.AudioTranscriptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
+        system_instruction=types.Content(
+            parts=[types.Part(text=system_instruction)]
+        ),
+    )
+    
+    async with client.aio.live.connect(model=MODEL, config=config) as session:
+        # Task 1: Forward browser audio to Live API
+        async def upstream():
+            async for message in websocket.iter_bytes():
+                await session.send_realtime_input(
+                    audio=types.Blob(mime_type="audio/pcm;rate=16000", data=message)
+                )
+        
+        # Task 2: Forward Live API responses to browser
+        async def downstream():
+            async for msg in session.receive():
+                envelope = build_envelope(msg)  # Convert to JSON
+                await websocket.send_text(json.dumps(envelope))
+        
+        # Run both tasks concurrently
+        await asyncio.gather(upstream(), downstream())
+```
+
+The `LiveConnectConfig` enables audio output with transcription for both input (what the user said) and output (the translation). The two concurrent tasks create a bidirectional bridge—audio flows in, translated audio and transcriptions flow out.
+
 The system instruction tells the model exactly how to behave:
 
 ```python
