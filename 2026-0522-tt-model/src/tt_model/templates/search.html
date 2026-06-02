@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gemini Embedding 2 Search Quality Demo</title>
+<script src="https://unpkg.com/deck.gl@9.1/dist.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+  .header { background: #1a73e8; color: white; padding: 14px 32px; display: flex; align-items: center; gap: 24px; flex-shrink: 0; }
+  .header h1 { font-size: 20px; font-weight: 500; }
+  .header .subtitle { font-size: 13px; opacity: 0.7; }
+  .toolbar { display: flex; gap: 12px; padding: 12px 32px; background: white; border-bottom: 1px solid #ddd; flex-shrink: 0; align-items: center; flex-wrap: wrap; }
+  .toolbar input { flex: 1; padding: 8px 14px; font-size: 14px; border: 2px solid #ddd; border-radius: 8px; outline: none; min-width: 200px; max-width: 480px; }
+  .toolbar input:focus { border-color: #1a73e8; }
+  .toolbar select { padding: 8px 14px; font-size: 14px; border: 2px solid #ddd; border-radius: 8px; outline: none; background: white; cursor: pointer; }
+  .toolbar select:focus { border-color: #1a73e8; }
+  .toolbar button { padding: 8px 20px; font-size: 14px; background: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; }
+  .toolbar button:hover { background: #1557b0; }
+  .toolbar button:disabled { background: #aaa; cursor: wait; }
+  .toolbar .status { font-size: 12px; color: #888; }
+  .viz-relevance-bar { position: absolute; top: 8px; right: 12px; z-index: 10; width: 200px; }
+  .viz-relevance-bar .relevance-bar-track { height: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+  .viz-relevance-bar .relevance-bar-label { font-size: 10px; color: rgba(255,255,255,0.7); margin-bottom: 2px; font-weight: 600; }
+  .viz-relevance-bar .viz-no-qrels { font-size: 10px; color: rgba(255,255,255,0.5); font-style: italic; }
+  .viz-metrics-row { display: flex; gap: 8px; margin-top: 3px; font-size: 10px; color: #555; font-weight: 600; }
+  .tabs { display: flex; background: white; border-bottom: 1px solid #ddd; flex-shrink: 0; padding: 0 32px; }
+  .tab { padding: 10px 24px; font-size: 14px; font-weight: 500; color: #666; cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.2s, border-color 0.2s; }
+  .tab:hover { color: #333; }
+  .tab.active { color: #1a73e8; border-bottom-color: #1a73e8; }
+  .content { flex: 1; overflow: hidden; position: relative; }
+
+  /* Results tab */
+  .results-panel { width: 100%; height: 100%; overflow-y: auto; display: none; }
+  .results-panel.active { display: block; }
+  .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0; min-height: 100%; }
+  .column { border-right: 1px solid #e0e0e0; padding: 16px 20px; background: white; }
+  .column:last-child { border-right: none; }
+  .col-header { margin-bottom: 12px; }
+  .col-header h2 { font-size: 16px; font-weight: 600; color: #1a73e8; }
+  .col-header .desc { font-size: 12px; color: #888; margin-top: 2px; }
+  .metric-chart { margin: 10px 0 14px; }
+  .metric-bar-row { display: flex; align-items: center; margin-bottom: 6px; }
+  .metric-bar-label { font-size: 11px; color: #666; width: 62px; flex-shrink: 0; text-align: right; padding-right: 8px; }
+  .metric-bar-track { flex: 1; height: 18px; background: #f1f3f4; border-radius: 4px; overflow: hidden; position: relative; }
+  .metric-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+  .metric-bar-fill.normal { background: #a8c7fa; }
+  .metric-bar-fill.best { background: #1a73e8; }
+  .metric-bar-value { font-size: 11px; font-weight: 600; position: absolute; right: 6px; top: 1px; line-height: 18px; }
+  .metric-bar-value.normal { color: #1a73e8; }
+  .metric-bar-value.best { color: white; }
+  .relevance-bar { margin: 0 0 14px; }
+  .relevance-bar-label { font-size: 11px; color: #666; margin-bottom: 4px; }
+  .relevance-bar-track { display: flex; height: 22px; border-radius: 4px; overflow: hidden; }
+  .relevance-bar-seg { display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; min-width: 0; transition: flex 0.4s ease; }
+  .relevance-bar-seg-E { background: #1a73e8; color: white; }
+  .relevance-bar-seg-S { background: #4d9cf6; color: white; }
+  .relevance-bar-seg-C { background: #a8c7fa; color: #1a3b6d; }
+  .relevance-bar-seg-I { background: #e8eaed; color: #666; }
+  .relevance-legend { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
+  .relevance-legend-item { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #666; }
+  .relevance-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+  .rank-diff { font-size: 11px; font-weight: 600; padding: 1px 5px; border-radius: 3px; }
+  .rank-diff-up { background: #e6f4ea; color: #137333; }
+  .rank-diff-down { background: #fce8e6; color: #c5221f; }
+  .rank-diff-new { background: #e8f0fe; color: #1a73e8; }
+
+  .result { padding: 10px 8px; border-bottom: 1px solid #f0f0f0; border-radius: 4px; margin-bottom: 2px; }
+  .result:last-child { border-bottom: none; }
+  .result-E { background: #d2e3fc; }
+  .result-S { background: #e8f0fe; }
+  .result-C { background: #f0f5ff; }
+  .result-I { background: #f1f3f4; }
+  .result-rank { font-size: 12px; color: #999; font-weight: 600; }
+  .result-title { font-size: 14px; margin: 3px 0; line-height: 1.4; }
+  .result-meta { font-size: 12px; color: #888; display: flex; gap: 8px; align-items: center; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .badge-E { background: #1a73e8; color: white; }
+  .badge-S { background: #4d9cf6; color: white; }
+  .badge-C { background: #a8c7fa; color: #1a3b6d; }
+  .badge-I { background: #f1f3f4; color: #666; }
+  .spinner { display: none; text-align: center; padding: 60px; grid-column: 1 / -1; color: #888; font-size: 15px; }
+  .spinner.active { display: block; }
+  .no-results { text-align: center; padding: 40px; color: #999; grid-column: 1 / -1; }
+
+  /* Viz tab */
+  .viz-panel { width: 100%; height: 100%; display: none; position: relative; background: #fafafa; }
+  .viz-panel.active { display: flex; }
+  .viz-map { flex: 1; position: relative; height: 100%; border-right: 1px solid #ddd; }
+  .viz-map:last-child { border-right: none; }
+  .viz-map-header { position: absolute; top: 0; left: 0; z-index: 10; padding: 8px; pointer-events: none; }
+  .viz-map-header select { pointer-events: auto; padding: 4px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; background: white; cursor: pointer; font-weight: 600; }
+  .viz-map .loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #888; background: #fafafa; z-index: 5; }
+  .viz-canvas { width: 100%; height: 100%; }
+  .tooltip { position: fixed; pointer-events: none; background: rgba(0,0,0,0.82); color: white; padding: 6px 12px; border-radius: 6px; font-size: 12px; max-width: 400px; white-space: normal; z-index: 100; display: none; transform: translateX(-50%); text-align: center; }
+  .cluster-badge { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.72); color: white; padding: 6px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; z-index: 10; display: none; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Gemini Embedding 2 Search Quality Demo</h1>
+  <span class="subtitle">{{ n_products|default(0) }} products &middot; Gemini Embedding 2 &middot; Vector Search 2.0</span>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="query" value="{{ default_query }}" placeholder="Enter a search query..." autofocus>
+  <button id="nextBtn" onclick="nextQuery()">Next Query</button>
+  <button id="clearBtn" onclick="clearSearch()" style="background:#666">Clear</button>
+  <span class="status" id="status"></span>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('results')">Results</div>
+  {% if methods %}
+  <div class="tab" onclick="switchTab('viz')">Embedding Map</div>
+  {% endif %}
+</div>
+
+<div class="content">
+  <div class="results-panel active" id="resultsPanel">
+    <div id="spinner" class="spinner">Searching...</div>
+    <div id="results" class="columns"></div>
+  </div>
+
+  {% if methods %}
+  <div class="viz-panel" id="vizPanel">
+    <div class="viz-map" id="mapLeft">
+      <div class="viz-map-header">
+        <select id="methodSelectLeft" onchange="mapLeft.switchMethod(this.value)">
+          {% for m in methods %}
+          <option value="{{ m }}"{{ ' selected' if m == 'similarity' else '' }}>{{ m.replace('_', ' ').title() }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="loading" id="loadingLeft">Loading coordinates...</div>
+      <div class="viz-canvas" id="canvasLeft"></div>
+      <div class="cluster-badge" id="clusterBadgeLeft"></div>
+      <div class="viz-relevance-bar" id="vizRelBarLeft"></div>
+    </div>
+    <div class="viz-map" id="mapRight">
+      <div class="viz-map-header">
+        <select id="methodSelectRight" onchange="mapRight.switchMethod(this.value)">
+          {% for m in methods %}
+          <option value="{{ m }}"{{ ' selected' if m == 'retrieval' else '' }}>{{ m.replace('_', ' ').title() }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="loading" id="loadingRight">Loading coordinates...</div>
+      <div class="viz-canvas" id="canvasRight"></div>
+      <div class="cluster-badge" id="clusterBadgeRight"></div>
+      <div class="viz-relevance-bar" id="vizRelBarRight"></div>
+    </div>
+  </div>
+  <div class="tooltip" id="tooltipLeft"></div>
+  <div class="tooltip" id="tooltipRight"></div>
+  {% endif %}
+</div>
+
+<script>
+const RELEVANCE_LABELS = {E: "Exact match", S: "Substitute", C: "Complement", I: "Irrelevant"};
+const METRICS_BY_METHOD = {};
+const LABEL_TO_METHOD = { 'Similarity': 'similarity', 'Two-Tower': 'tt_similarity', 'Retrieval': 'retrieval' };
+let activeTab = 'results';
+
+// ── Tab switching ──
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach((el, i) => {
+    el.classList.toggle('active', (i === 0 && tab === 'results') || (i === 1 && tab === 'viz'));
+  });
+  document.getElementById('resultsPanel').classList.toggle('active', tab === 'results');
+  {% if methods %}
+  const vizPanel = document.getElementById('vizPanel');
+  vizPanel.classList.toggle('active', tab === 'viz');
+  if (tab === 'viz' && !vizInitialized) {
+    initViz();
+  } else if (tab === 'viz' && vizDirty) {
+    vizDirty = false;
+    for (const inst of mapInstances) inst.refresh();
+  }
+  {% endif %}
+}
+
+// ── Shared search ──
+
+document.getElementById("query").addEventListener("keydown", e => {
+  if (e.key === "Enter") doSearch();
+});
+
+async function nextQuery() {
+  const btn = document.getElementById("nextBtn");
+  btn.disabled = true;
+  try {
+    const resp = await fetch("/next_query");
+    const data = await resp.json();
+    clearSearch();
+    document.getElementById("query").value = data.query;
+    await doSearch();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function clearSearch() {
+  document.getElementById("query").value = "";
+  document.getElementById("status").textContent = "";
+  document.getElementById("results").innerHTML = "";
+  {% if methods %}
+  vizClearSearch();
+  {% endif %}
+}
+
+async function doSearch() {
+  const query = document.getElementById("query").value.trim();
+  if (!query) return;
+  const btn = document.getElementById("nextBtn");
+  btn.disabled = true;
+  const status = document.getElementById("status");
+  status.textContent = "Searching...";
+
+  const searchPromise = fetchSearchResults(query);
+  {% if methods %}
+  const vizPromise = fetchVizResults(query);
+  {% endif %}
+
+  try {
+    await searchPromise;
+  } catch (e) {}
+  {% if methods %}
+  try {
+    await vizPromise;
+  } catch (e) {}
+  {% endif %}
+
+  btn.disabled = false;
+  status.textContent = "";
+}
+
+// ── Results tab ──
+
+async function fetchSearchResults(query) {
+  const spinner = document.getElementById("spinner");
+  const results = document.getElementById("results");
+  spinner.className = "spinner active";
+  results.innerHTML = "";
+  try {
+    const resp = await fetch("/search", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({query})
+    });
+    const data = await resp.json();
+    if (data.error) {
+      results.innerHTML = '<div class="no-results">Error: ' + data.error + '</div>';
+    } else {
+      renderResults(data);
+    }
+  } catch (e) {
+    results.innerHTML = '<div class="no-results">Error: ' + e.message + '</div>';
+  } finally {
+    spinner.className = "spinner";
+  }
+}
+
+function renderResults(data) {
+  const results = document.getElementById("results");
+  data.columns.forEach(col => {
+    const method = LABEL_TO_METHOD[col.label];
+    if (method && col.metrics) METRICS_BY_METHOD[method] = col.metrics;
+  });
+  {% if methods %}
+  if (typeof mapInstances !== 'undefined') {
+    for (const inst of mapInstances) inst.updateRelevanceBar();
+  }
+  {% endif %}
+  const allMetrics = {};
+  data.columns.forEach(col => {
+    Object.entries(col.metrics || {}).forEach(([k, v]) => {
+      if (!allMetrics[k]) allMetrics[k] = [];
+      allMetrics[k].push(v);
+    });
+  });
+  const bestMetric = {};
+  Object.entries(allMetrics).forEach(([k, vals]) => {
+    bestMetric[k] = Math.max(...vals);
+  });
+
+  const baseCol = data.columns.find(c => c.label === 'BM25');
+  const baseRank = {};
+  if (baseCol) baseCol.results.forEach(r => { baseRank[r.product_id] = r.rank; });
+
+  results.innerHTML = data.columns.map(col => {
+    const metricEntries = Object.entries(col.metrics || {});
+    const chartHtml = metricEntries.length ? metricEntries.map(([k, v]) => {
+      const isBest = v === bestMetric[k] && v > 0;
+      const cls = isBest ? "best" : "normal";
+      const pct = Math.max(v * 100, 0);
+      return `<div class="metric-bar-row">
+        <span class="metric-bar-label">${k}</span>
+        <div class="metric-bar-track">
+          <div class="metric-bar-fill ${cls}" style="width:${pct}%"></div>
+          <span class="metric-bar-value ${cls}">${v.toFixed(4)}</span>
+        </div>
+      </div>`;
+    }).join("") : "";
+
+    const top10 = col.results.slice(0, 10);
+    const gradeCounts = {E: 0, S: 0, C: 0, I: 0};
+    for (const r of top10) {
+      if (r.relevance && gradeCounts.hasOwnProperty(r.relevance)) {
+        gradeCounts[r.relevance]++;
+      } else {
+        gradeCounts['I']++;
+      }
+    }
+    const gradeBar = top10.length > 0 ? `<div class="relevance-bar">
+      <div class="relevance-bar-label">Top-10 relevance</div>
+      <div class="relevance-bar-track">
+        ${['E','S','C','I'].map(g => gradeCounts[g] > 0
+          ? `<div class="relevance-bar-seg relevance-bar-seg-${g}" style="flex:${gradeCounts[g]}">${gradeCounts[g]} ${g}</div>`
+          : '').join('')}
+      </div>
+      <div class="relevance-legend">
+        <span class="relevance-legend-item"><span class="relevance-legend-dot" style="background:#1a73e8"></span>Exact</span>
+        <span class="relevance-legend-item"><span class="relevance-legend-dot" style="background:#4d9cf6"></span>Substitute</span>
+        <span class="relevance-legend-item"><span class="relevance-legend-dot" style="background:#a8c7fa"></span>Complement</span>
+        <span class="relevance-legend-item"><span class="relevance-legend-dot" style="background:#e8eaed"></span>Irrelevant</span>
+      </div>
+    </div>` : '';
+
+    const isBase = col.label === 'BM25';
+    const itemsHtml = col.results.map(r => {
+      let badgeHtml = r.relevance
+        ? `<span class="badge badge-${r.relevance}">${RELEVANCE_LABELS[r.relevance] || r.relevance}</span>`
+        : "";
+      let diffHtml = "";
+      if (!isBase && baseCol) {
+        const prev = baseRank[r.product_id];
+        if (prev == null) {
+          diffHtml = `<span class="rank-diff rank-diff-new">new</span>`;
+        } else {
+          const delta = prev - r.rank;
+          if (delta > 0) diffHtml = `<span class="rank-diff rank-diff-up">↑${delta}</span>`;
+          else if (delta < 0) diffHtml = `<span class="rank-diff rank-diff-down">↓${-delta}</span>`;
+        }
+      }
+      const relClass = r.relevance ? " result-" + r.relevance : "";
+      return `<div class="result${relClass}">
+        <span class="result-rank">#${r.rank}</span>
+        <div class="result-title">${escapeHtml(r.title)}</div>
+        <div class="result-meta">
+          <span>Score: ${r.score.toFixed(4)}</span>
+          ${badgeHtml}
+          ${diffHtml}
+        </div>
+      </div>`;
+    }).join("");
+
+    return `<div class="column">
+      <div class="col-header">
+        <h2>${col.label}</h2>
+        <div class="desc">${col.description}</div>
+      </div>
+      ${gradeBar}
+      ${chartHtml ? '<div class="metric-chart">' + chartHtml + '</div>' : ''}
+      ${itemsHtml}
+    </div>`;
+  }).join("");
+}
+
+function escapeHtml(text) {
+  const d = document.createElement("div");
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+// ── Viz tab ──
+
+{% if methods %}
+const VIZ_METHODS = {{ methods | tojson }};
+const METHOD_LABELS = {
+  similarity: 'Similarity', retrieval: 'Retrieval',
+  tt_similarity: 'TT Similarity', tt_retrieval: 'TT Retrieval',
+};
+const METHOD_COLORS = {
+  similarity: [26,115,232], retrieval: [234,67,53],
+  tt_similarity: [52,168,83], tt_retrieval: [251,188,4],
+};
+const DIM_COLOR = [218,220,224,40];
+const HIGHLIGHT_COLOR = [234,67,53,255];
+const QUERY_COLOR = [15,157,88,255];
+const GRADE_COLORS = {
+  E: [26,115,232,255],
+  S: [77,156,246,255],
+  C: [168,199,250,255],
+  I: [232,234,237,255],
+};
+const UNKNOWN_COLOR = [232,234,237,255];
+const DEFAULT_ALPHA = 150;
+const TOP_K_LABELS = 10;
+
+const coordData = {};
+const clusterData = {};
+let vizProductIds = null;
+let vizProductTitles = null;
+let vizIdIndex = {};
+let vizHighlightSets = {};
+let vizRankedResults = {};
+let vizRelevance = {};
+let vizIsTestQuery = false;
+let vizCurrentQuery = '';
+const DEFAULT_ZOOM = 9;
+let vizInitialized = false;
+let vizDirty = false;
+
+async function vizLoadProducts() {
+  if (vizProductIds) return;
+  const resp = await fetch('/viz/products');
+  const data = await resp.json();
+  vizProductIds = data.ids;
+  vizProductTitles = data.titles;
+  vizIdIndex = {};
+  for (let i = 0; i < vizProductIds.length; i++) {
+    vizIdIndex[vizProductIds[i]] = i;
+  }
+}
+
+async function loadBinaryCoords(method) {
+  if (coordData[method]) return coordData[method];
+  const resp = await fetch(`/viz/coords/${method}`);
+  const buf = await resp.arrayBuffer();
+  const view = new DataView(buf);
+  const n = view.getUint32(0, true);
+  const x = new Float32Array(buf, 4, n);
+  const y = new Float32Array(buf, 4 + n * 4, n);
+  const positions = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    positions[i * 3] = x[i];
+    positions[i * 3 + 1] = y[i];
+    positions[i * 3 + 2] = 0;
+  }
+  coordData[method] = { n, positions };
+  return coordData[method];
+}
+
+async function loadClusters(method) {
+  if (clusterData[method]) return;
+  try {
+    const resp = await fetch(`/viz/clusters/${method}`);
+    clusterData[method] = await resp.json();
+  } catch (e) {
+    clusterData[method] = [];
+  }
+}
+
+function getPos(method, idx) {
+  const p = coordData[method].positions;
+  return [p[idx * 3], p[idx * 3 + 1], 0];
+}
+
+function createMapInstance(canvasId, tooltipId, badgeId, loadingId, relBarId, defaultMethod) {
+  let currentZoom = DEFAULT_ZOOM;
+  const inst = {
+    method: defaultMethod,
+    deckInstance: null,
+    viewState: { target: [0, 0, 0], zoom: DEFAULT_ZOOM },
+    _autoZooming: false,
+  };
+
+  function gradeColor(idx) {
+    const rels = vizRelevance[inst.method];
+    const grade = rels ? rels.get(idx) : null;
+    return (grade && GRADE_COLORS[grade]) || UNKNOWN_COLOR;
+  }
+
+  function buildColorBuffer() {
+    const data = coordData[inst.method];
+    if (!data) return null;
+    const n = data.n;
+    const hl = vizHighlightSets[inst.method];
+    const base = METHOD_COLORS[inst.method] || [100,100,100];
+    const hasHighlight = hl && hl.size > 0;
+    const buf = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      const off = i * 4;
+      if (hasHighlight) {
+        if (hl.has(i)) {
+          const c = gradeColor(i);
+          buf[off] = c[0]; buf[off+1] = c[1]; buf[off+2] = c[2]; buf[off+3] = c[3];
+        } else {
+          buf[off] = DIM_COLOR[0]; buf[off+1] = DIM_COLOR[1];
+          buf[off+2] = DIM_COLOR[2]; buf[off+3] = DIM_COLOR[3];
+        }
+      } else {
+        buf[off] = base[0]; buf[off+1] = base[1];
+        buf[off+2] = base[2]; buf[off+3] = DEFAULT_ALPHA;
+      }
+    }
+    return buf;
+  }
+
+  function showTooltip(info) {
+    const el = document.getElementById(tooltipId);
+    if (!info.picked || info.index < 0 || !vizProductTitles) { el.style.display = 'none'; return; }
+    el.textContent = vizProductTitles[info.index];
+    el.style.display = 'block';
+    const rect = document.getElementById(canvasId).getBoundingClientRect();
+    el.style.left = (rect.left + info.x) + 'px';
+    el.style.top = (rect.top + info.y + 16) + 'px';
+  }
+
+  function buildLayers() {
+    const method = inst.method;
+    const data = coordData[method];
+    if (!data) return [];
+    const colors = buildColorBuffer();
+    const hl = vizHighlightSets[method];
+    const hasHighlight = hl && hl.size > 0;
+
+    const layers = [
+      new deck.ScatterplotLayer({
+        id: 'scatter',
+        data: { length: data.n, attributes: {
+          getPosition: { value: data.positions, size: 3 },
+          getFillColor: { value: colors, size: 4 },
+        }},
+        getRadius: 1, radiusMinPixels: 0.25, radiusMaxPixels: 1.5,
+        pickable: !hasHighlight,
+        onHover: hasHighlight ? undefined : info => showTooltip(info),
+      }),
+    ];
+
+    if (hasHighlight) {
+      const hlIndices = [...hl];
+      const hlPositions = new Float32Array(hlIndices.length * 3);
+      const hlColors = new Uint8Array(hlIndices.length * 4);
+      const hlTitles = [];
+      for (let i = 0; i < hlIndices.length; i++) {
+        const idx = hlIndices[i];
+        hlPositions[i * 3] = data.positions[idx * 3];
+        hlPositions[i * 3 + 1] = data.positions[idx * 3 + 1];
+        hlPositions[i * 3 + 2] = 0;
+        hlTitles.push(vizProductTitles ? vizProductTitles[idx] : '');
+        const c = gradeColor(idx);
+        hlColors[i*4] = c[0]; hlColors[i*4+1] = c[1]; hlColors[i*4+2] = c[2]; hlColors[i*4+3] = c[3];
+      }
+      layers.push(new deck.ScatterplotLayer({
+        id: 'scatter-highlight',
+        data: { length: hlIndices.length, attributes: {
+          getPosition: { value: hlPositions, size: 3 },
+          getFillColor: { value: hlColors, size: 4 },
+        } },
+        getRadius: 2.5, radiusMinPixels: 1.5, radiusMaxPixels: 4,
+        pickable: true,
+        onHover: info => {
+          const el = document.getElementById(tooltipId);
+          if (!info.picked || info.index < 0) { el.style.display = 'none'; return; }
+          const rect = document.getElementById(canvasId).getBoundingClientRect();
+          el.textContent = hlTitles[info.index];
+          el.style.display = 'block';
+          el.style.left = (rect.left + info.x) + 'px';
+          el.style.top = (rect.top + info.y + 16) + 'px';
+        },
+      }));
+    }
+
+    const clusters = clusterData[method];
+    if (clusters && clusters.length > 0 && !hasHighlight) {
+      const level = currentZoom < 10 ? 0 : 1;
+      const visible = clusters.filter(c => c.level === level);
+      layers.push(new deck.TextLayer({
+        id: 'cluster-labels', data: visible,
+        getPosition: d => [d.cx, d.cy, 0], getText: d => d.label,
+        getSize: level === 0 ? 18 : 14, getColor: [33,33,33,255],
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontWeight: 900, background: true,
+        getBackgroundColor: [255,255,255,180], backgroundPadding: [6,3],
+        billboard: false, sizeUnits: 'pixels',
+        sizeMinPixels: level === 0 ? 14 : 11, sizeMaxPixels: level === 0 ? 22 : 16,
+        getTextAnchor: 'middle', getAlignmentBaseline: 'center',
+      }));
+    }
+
+    const ranked = vizRankedResults[method];
+    if (!ranked || ranked.length === 0) return layers;
+
+    const topK = ranked.slice(0, TOP_K_LABELS);
+    const labelData = topK.map((idx, rank) => ({ position: getPos(method, idx), text: `#${rank + 1}` }));
+    let cx = 0, cy = 0;
+    for (const idx of topK) { const pos = getPos(method, idx); cx += pos[0]; cy += pos[1]; }
+    cx /= topK.length; cy /= topK.length;
+    const queryPos = [cx, cy, 0];
+    layers.push(new deck.ScatterplotLayer({
+      id: 'query-point', data: [{ position: queryPos }],
+      getPosition: d => d.position, getFillColor: QUERY_COLOR,
+      getRadius: 6, radiusMinPixels: 5, radiusMaxPixels: 10,
+    }));
+    layers.push(new deck.TextLayer({
+      id: 'labels', data: labelData,
+      getPosition: d => d.position, getText: d => d.text,
+      getSize: 18, getColor: [33,33,33,255], getPixelOffset: [0,-4],
+      getTextAnchor: 'middle', getAlignmentBaseline: 'bottom',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontWeight: 900, outlineWidth: 3, outlineColor: [255,255,255,255],
+      billboard: false, sizeUnits: 'pixels', sizeMinPixels: 14, sizeMaxPixels: 22,
+    }));
+    layers.push(new deck.TextLayer({
+      id: 'query-label', data: [{ position: queryPos, text: 'Query: ' + vizCurrentQuery }],
+      getPosition: d => d.position, getText: d => d.text,
+      getSize: 16, getColor: [33,33,33,255], getPixelOffset: [0,14],
+      getTextAnchor: 'middle', getAlignmentBaseline: 'top',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontWeight: 700, background: true, getBackgroundColor: [255,255,255,230],
+      backgroundPadding: [6, 3], getBorderColor: [200,200,200,255], getBorderWidth: 1,
+      billboard: false, sizeUnits: 'pixels', sizeMinPixels: 12, sizeMaxPixels: 18,
+    }));
+
+    updateBadge(hasHighlight);
+    return layers;
+  }
+
+  function updateBadge(hasHighlight) {
+    const badge = document.getElementById(badgeId);
+    if (!hasHighlight) { badge.style.display = 'none'; return; }
+    const clusters = clusterData[inst.method];
+    if (!clusters || clusters.length === 0) { badge.style.display = 'none'; return; }
+    const ranked = vizRankedResults[inst.method];
+    if (!ranked || ranked.length === 0) { badge.style.display = 'none'; return; }
+    const topK = ranked.slice(0, TOP_K_LABELS);
+    let cx = 0, cy = 0;
+    for (const idx of topK) { const p = getPos(inst.method, idx); cx += p[0]; cy += p[1]; }
+    cx /= topK.length; cy /= topK.length;
+    const maxLevel = Math.max(...clusters.map(c => c.level));
+    const coarse = clusters.filter(c => c.level === maxLevel);
+    let best = null, bestDist = Infinity;
+    for (const c of coarse) {
+      const d = (c.cx - cx) ** 2 + (c.cy - cy) ** 2;
+      if (d < bestDist) { bestDist = d; best = c; }
+    }
+    if (best) { badge.textContent = best.label; badge.style.display = 'block'; }
+    else { badge.style.display = 'none'; }
+  }
+
+  function computeZoomTarget() {
+    const ranked = vizRankedResults[inst.method];
+    if (!ranked || ranked.length === 0) return null;
+    const topK = ranked.slice(0, TOP_K_LABELS);
+    let cx = 0, cy = 0;
+    for (const idx of topK) { const pos = getPos(inst.method, idx); cx += pos[0]; cy += pos[1]; }
+    cx /= topK.length; cy /= topK.length;
+    let maxDx = 0.01, maxDy = 0.01;
+    for (const idx of topK) {
+      const pos = getPos(inst.method, idx);
+      maxDx = Math.max(maxDx, Math.abs(pos[0] - cx));
+      maxDy = Math.max(maxDy, Math.abs(pos[1] - cy));
+    }
+    const container = document.getElementById(canvasId);
+    const pad = 1.3;
+    const zoomX = Math.log2(container.clientWidth / 2 / (maxDx * pad));
+    const zoomY = Math.log2(container.clientHeight / 2 / (maxDy * pad));
+    return { target: [cx, cy, 0], zoom: Math.min(zoomX, zoomY, 18) };
+  }
+
+  function computeFitView() {
+    const data = coordData[inst.method];
+    if (!data) return { target: [0,0,0], zoom: 9 };
+    const n = data.n, p = data.positions;
+    const xs = new Float32Array(n), ys = new Float32Array(n);
+    for (let i = 0; i < n; i++) { xs[i] = p[i*3]; ys[i] = p[i*3+1]; }
+    xs.sort(); ys.sort();
+    const lo = Math.floor(n * 0.02), hi = Math.floor(n * 0.98);
+    const minX = xs[lo], maxX = xs[hi], minY = ys[lo], maxY = ys[hi];
+    const cx = (minX+maxX)/2, cy = (minY+maxY)/2;
+    const bboxW = maxX-minX || 0.01, bboxH = maxY-minY || 0.01;
+    const container = document.getElementById(canvasId);
+    return { target: [cx,cy,0], zoom: Math.log2(Math.min(container.clientWidth/bboxW, container.clientHeight/bboxH)) - 0.15 };
+  }
+
+  inst.render = function(viewOverride) {
+    if (viewOverride && viewOverride.zoom != null) currentZoom = viewOverride.zoom;
+    const layers = buildLayers();
+    if (layers.length === 0) return;
+    if (viewOverride) {
+      inst._autoZooming = true;
+      setTimeout(() => { inst._autoZooming = false; }, 1000);
+      inst.viewState = { ...inst.viewState, ...viewOverride, transitionDuration: 800 };
+    }
+    if (inst.deckInstance) {
+      inst.deckInstance.setProps({ viewState: inst.viewState, layers });
+    } else {
+      inst.viewState = viewOverride || inst.viewState;
+      inst.deckInstance = new deck.Deck({
+        parent: document.getElementById(canvasId),
+        views: new deck.OrthographicView({ flipY: false }),
+        viewState: inst.viewState,
+        controller: true, layers,
+        getCursor: ({ isHovering }) => isHovering ? 'pointer' : 'grab',
+        onViewStateChange: ({ viewState }) => {
+          inst.viewState = viewState;
+          const prevLevel = currentZoom < 10 ? 0 : 1;
+          currentZoom = viewState.zoom;
+          if (inst._autoZooming) {
+            inst.deckInstance.setProps({ viewState });
+            return;
+          }
+          const newLevel = currentZoom < 10 ? 0 : 1;
+          if (prevLevel !== newLevel) {
+            inst.deckInstance.setProps({ viewState, layers: buildLayers() });
+          } else {
+            inst.deckInstance.setProps({ viewState });
+          }
+        },
+      });
+    }
+  };
+
+  inst.switchMethod = async function(method) {
+    inst.method = method;
+    const loading = document.getElementById(loadingId);
+    if (!coordData[method]) {
+      loading.style.display = 'flex';
+      loading.textContent = `Loading ${METHOD_LABELS[method] || method}...`;
+      try {
+        await Promise.all([loadBinaryCoords(method), loadClusters(method)]);
+      } catch (e) {
+        loading.textContent = 'Failed to load: ' + e.message;
+        return;
+      }
+    }
+    loading.style.display = 'none';
+    const hl = vizHighlightSets[method];
+    const view = (hl && hl.size > 0) ? computeZoomTarget() : computeFitView();
+    inst.render(view);
+    inst.updateRelevanceBar();
+  };
+
+  inst.refresh = function() {
+    const hl = vizHighlightSets[inst.method];
+    const view = (hl && hl.size > 0) ? computeZoomTarget() : computeFitView();
+    inst.render(view);
+    inst.updateRelevanceBar();
+  };
+
+  inst.clearBadge = function() {
+    document.getElementById(badgeId).style.display = 'none';
+  };
+
+  inst.updateRelevanceBar = function() {
+    const el = document.getElementById(relBarId);
+    const method = inst.method;
+    const ranked = vizRankedResults[method];
+    const rels = vizRelevance[method];
+    if (!vizIsTestQuery || !ranked || ranked.length === 0) {
+      el.innerHTML = (vizCurrentQuery && !vizIsTestQuery)
+        ? '<div class="viz-no-qrels">No relevance data</div>' : '';
+      return;
+    }
+    const top10 = ranked.slice(0, 10);
+    const counts = {E: 0, S: 0, C: 0, I: 0};
+    for (const idx of top10) {
+      const grade = rels ? rels.get(idx) : null;
+      if (grade && counts.hasOwnProperty(grade)) counts[grade]++;
+      else counts['I']++;
+    }
+    const segs = ['E','S','C','I'].map(g => counts[g] > 0
+      ? `<div class="relevance-bar-seg relevance-bar-seg-${g}" style="flex:${counts[g]}">${counts[g]} ${g}</div>`
+      : '').join('');
+    const metrics = METRICS_BY_METHOD[method] || {};
+    const mHtml = ['RR@10','NDCG@10','Recall@10'].map(k => {
+      const v = metrics[k];
+      return v != null ? `<span>${k} ${v.toFixed(4)}</span>` : '';
+    }).filter(Boolean).join('');
+    el.innerHTML = `<div class="relevance-bar-track">${segs}</div>${mHtml ? `<div class="viz-metrics-row">${mHtml}</div>` : ''}`;
+  };
+
+  return inst;
+}
+
+const mapLeft = createMapInstance('canvasLeft', 'tooltipLeft', 'clusterBadgeLeft', 'loadingLeft', 'vizRelBarLeft',
+  VIZ_METHODS.includes('similarity') ? 'similarity' : VIZ_METHODS[0]);
+const mapRight = createMapInstance('canvasRight', 'tooltipRight', 'clusterBadgeRight', 'loadingRight', 'vizRelBarRight',
+  VIZ_METHODS.includes('retrieval') ? 'retrieval' : VIZ_METHODS[Math.min(1, VIZ_METHODS.length - 1)]);
+const mapInstances = [mapLeft, mapRight];
+
+async function initViz() {
+  vizInitialized = true;
+  await vizLoadProducts();
+  const query = document.getElementById('query').value.trim();
+  if (query) {
+    await fetchVizResults(query);
+  }
+  await Promise.all([mapLeft.switchMethod(mapLeft.method), mapRight.switchMethod(mapRight.method)]);
+}
+
+async function fetchVizResults(query) {
+  if (!vizInitialized) return;
+  try {
+    const resp = await fetch('/viz/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    const data = await resp.json();
+    if (data.error) return;
+    vizCurrentQuery = query;
+    vizIsTestQuery = data.is_test_query || false;
+    for (const m of VIZ_METHODS) {
+      const ids = data.results[m] || [];
+      const relMap = (data.relevance && data.relevance[m]) || {};
+      const indices = [];
+      const gradeMap = new Map();
+      for (let i = 0; i < ids.length; i++) {
+        const idx = vizIdIndex[ids[i]];
+        if (idx !== undefined) {
+          indices.push(idx);
+          gradeMap.set(idx, relMap[ids[i]] || null);
+        }
+      }
+      vizRankedResults[m] = indices;
+      vizHighlightSets[m] = new Set(indices);
+      vizRelevance[m] = gradeMap;
+    }
+    if (activeTab === 'viz') {
+      for (const inst of mapInstances) inst.refresh();
+    } else {
+      vizDirty = true;
+    }
+  } catch (e) {}
+}
+
+function vizClearSearch() {
+  vizCurrentQuery = '';
+  vizIsTestQuery = false;
+  for (const k in METRICS_BY_METHOD) delete METRICS_BY_METHOD[k];
+  for (const inst of mapInstances) { inst.clearBadge(); inst.updateRelevanceBar(); }
+  for (const m of VIZ_METHODS) {
+    vizHighlightSets[m] = new Set();
+    vizRankedResults[m] = [];
+    vizRelevance[m] = new Map();
+  }
+  if (vizInitialized) {
+    if (activeTab === 'viz') {
+      for (const inst of mapInstances) inst.refresh();
+    } else {
+      vizDirty = true;
+    }
+  }
+}
+
+{% endif %}
+
+// ── Init ──
+doSearch();
+{% if methods %}
+(async () => {
+  await vizLoadProducts();
+  await Promise.all([
+    loadBinaryCoords(mapLeft.method).then(() => loadClusters(mapLeft.method)),
+    loadBinaryCoords(mapRight.method).then(() => loadClusters(mapRight.method)),
+  ]);
+})();
+{% endif %}
+</script>
+</body>
+</html>
