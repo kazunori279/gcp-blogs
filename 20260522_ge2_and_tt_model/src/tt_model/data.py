@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import dataclass, field
 
 import numpy as np
 from datasets import load_dataset
@@ -6,6 +7,84 @@ from datasets import load_dataset
 
 LABEL_SCORES = {"E": 3, "S": 2, "C": 1, "I": 0}
 POSITIVE_LABELS = {"E", "S"}
+
+
+@dataclass(frozen=True)
+class DatasetConfig:
+    name: str
+    display_name: str
+    label_scores: dict[str, int]
+    positive_labels: frozenset[str]
+    score_to_label: dict[int, str]
+    grade_order: list[str]
+    grade_colors: dict[str, str]
+    grade_names: dict[str, str]
+    doc_template: str
+    query_template: str
+    embedding_prefix: str
+    collection_prefix: str
+    doc_noun: str
+    cluster_context: str
+    stopwords_extra: frozenset[str] = field(default_factory=frozenset)
+
+
+ESCI_CONFIG = DatasetConfig(
+    name="esci",
+    display_name="Amazon ESCI",
+    label_scores={"E": 3, "S": 2, "C": 1, "I": 0},
+    positive_labels=frozenset({"E", "S"}),
+    score_to_label={3: "E", 2: "S", 1: "C", 0: "I"},
+    grade_order=["E", "S", "C", "I"],
+    grade_colors={"E": "#1a73e8", "S": "#4d9cf6", "C": "#a8c7fa", "I": "#e8eaed"},
+    grade_names={
+        "E": "Exact match", "S": "Substitute",
+        "C": "Complement", "I": "Irrelevant",
+    },
+    doc_template="title: none | text: {t}",
+    query_template="task: search result | query: {t}",
+    embedding_prefix="esci",
+    collection_prefix="tt-demo",
+    doc_noun="products",
+    cluster_context="product titles from a cluster of similar products",
+    stopwords_extra=frozenset(
+        "pack free size inch black white blue red green pink color "
+        "large small medium extra compatible fits fit use used great best high "
+        "quality made make premium pro plus super ultra mini max style design "
+        "type model version edition series part without love life day kids men "
+        "women girl boy gift home office".split()
+    ),
+)
+
+MSMARCO_CONFIG = DatasetConfig(
+    name="msmarco",
+    display_name="MS MARCO",
+    label_scores={"R": 1, "N": 0},
+    positive_labels=frozenset({"R"}),
+    score_to_label={1: "R", 0: "N"},
+    grade_order=["R", "N"],
+    grade_colors={"R": "#1a73e8", "N": "#e8eaed"},
+    grade_names={"R": "Relevant", "N": "Not relevant"},
+    doc_template="passage: {t}",
+    query_template="task: search result | query: {t}",
+    embedding_prefix="msmarco",
+    collection_prefix="tt-msmarco",
+    doc_noun="passages",
+    cluster_context="web passage excerpts from a cluster of similar passages",
+    stopwords_extra=frozenset(
+        "www http https com org net html page site website click "
+        "read more learn article post blog news update".split()
+    ),
+)
+
+_DATASET_CONFIGS = {"esci": ESCI_CONFIG, "msmarco": MSMARCO_CONFIG}
+
+
+def get_dataset_config(name: str) -> DatasetConfig:
+    if name not in _DATASET_CONFIGS:
+        raise ValueError(
+            f"Unknown dataset: {name!r}. Choose from: {list(_DATASET_CONFIGS)}"
+        )
+    return _DATASET_CONFIGS[name]
 
 
 def query_id_for_text(query: str) -> str:
@@ -155,3 +234,122 @@ def split_train_validation_queries(
     )
 
     return fit_queries, fit_qrels, val_queries, val_qrels
+
+
+def load_msmarco(max_passages: int | None = 500_000):
+    """Load MS MARCO passage ranking dataset from BeIR format.
+
+    Uses BeIR/msmarco for corpus+queries and BeIR/msmarco-qrels for
+    relevance judgments. Binary relevance: 1=relevant, 0=not relevant.
+    Train/test split comes from the dataset itself (train vs validation).
+
+    Returns same 5-tuple shape as load_esci:
+        passages, train_queries, train_qrels, test_queries, test_qrels
+    """
+    print("Loading MS MARCO passage ranking dataset...")
+
+    # Load corpus
+    print("Loading corpus...")
+    corpus_ds = load_dataset(
+        "BeIR/msmarco", "corpus", split="train",
+        verification_mode="no_checks",
+    )
+
+    # Load qrels to figure out which passages are actually referenced
+    print("Loading relevance judgments...")
+    train_qrels_ds = load_dataset(
+        "BeIR/msmarco-qrels", split="train",
+        verification_mode="no_checks",
+    )
+    test_qrels_ds = load_dataset(
+        "BeIR/msmarco-qrels", split="validation",
+        verification_mode="no_checks",
+    )
+
+    # Collect passage IDs referenced in qrels so we prioritize those
+    referenced_pids = set()
+    for row in train_qrels_ds:
+        if row["score"] > 0:
+            referenced_pids.add(str(row["corpus-id"]))
+    for row in test_qrels_ds:
+        if row["score"] > 0:
+            referenced_pids.add(str(row["corpus-id"]))
+    print(f"  Passages referenced in qrels: {len(referenced_pids)}")
+
+    # Build passage catalog: prioritize referenced passages, then fill up
+    print("Building passage catalog...")
+    passages = {}
+    deferred = {}
+    for row in corpus_ds:
+        pid = str(row["_id"])
+        text = (row.get("text") or "").strip()
+        if not text:
+            continue
+        if pid in referenced_pids:
+            passages[pid] = text
+        else:
+            if max_passages is None or len(passages) + len(deferred) < max_passages:
+                deferred[pid] = text
+        if max_passages and len(passages) + len(deferred) >= max_passages:
+            break
+
+    # Merge referenced + deferred up to limit
+    if max_passages:
+        remaining = max_passages - len(passages)
+        if remaining > 0:
+            for pid, text in list(deferred.items())[:remaining]:
+                passages[pid] = text
+    else:
+        passages.update(deferred)
+
+    passage_set = set(passages.keys())
+    print(f"  Passages: {len(passages)}")
+
+    # Load queries
+    print("Loading queries...")
+    queries_ds = load_dataset(
+        "BeIR/msmarco", "queries", split="train",
+        verification_mode="no_checks",
+    )
+    all_query_texts = {}
+    for row in queries_ds:
+        qid = str(row["_id"])
+        text = (row.get("text") or "").strip()
+        if text:
+            all_query_texts[qid] = text
+
+    # Build qrels from train and test splits, filtering to our passage subset
+    def _build_qrels(qrels_ds, label="split"):
+        queries = {}
+        qrels = {}
+        for row in qrels_ds:
+            score = row["score"]
+            if score <= 0:
+                continue
+            qid = str(row["query-id"])
+            pid = str(row["corpus-id"])
+            if pid not in passage_set:
+                continue
+            if qid not in all_query_texts:
+                continue
+            queries[qid] = all_query_texts[qid]
+            qrels.setdefault(qid, {})[pid] = score
+        pairs = sum(len(v) for v in qrels.values())
+        print(f"  {label}: {len(queries)} queries ({pairs} pairs)")
+        return queries, qrels
+
+    train_queries, train_qrels = _build_qrels(train_qrels_ds, "Train")
+    test_queries, test_qrels = _build_qrels(test_qrels_ds, "Test")
+
+    return passages, train_queries, train_qrels, test_queries, test_qrels
+
+
+def load_dataset_by_config(
+    config: DatasetConfig,
+    max_docs: int | None = None,
+):
+    if config.name == "esci":
+        return load_esci(max_products=max_docs)
+    elif config.name == "msmarco":
+        return load_msmarco(max_passages=max_docs)
+    raise ValueError(f"Unknown dataset: {config.name}")

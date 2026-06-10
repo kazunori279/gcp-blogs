@@ -32,26 +32,39 @@ def create_train_state(rng, model):
     )
 
 
-def checkpoint_path(model_variant: str, timestamp: str | None = None) -> Path:
+def checkpoint_path(
+    model_variant: str,
+    timestamp: str | None = None,
+    params_dir: Path | None = None,
+) -> Path:
     """Build a checkpoint path for a training variant."""
     ts = timestamp or datetime.now().strftime("%Y%m%d-%H%M%S")
-    return MODEL_PARAMS_DIR / f"{model_variant}-{ts}.msgpack"
+    base = params_dir or MODEL_PARAMS_DIR
+    return base / f"{model_variant}-{ts}.msgpack"
 
 
-def latest_checkpoint_path(model_variant: str) -> Path:
+def latest_checkpoint_path(
+    model_variant: str,
+    params_dir: Path | None = None,
+) -> Path:
     """Return the most recent checkpoint path for a training variant."""
+    base = params_dir or MODEL_PARAMS_DIR
     pattern = f"{model_variant}-*.msgpack"
-    matches = sorted(MODEL_PARAMS_DIR.glob(pattern))
+    matches = sorted(base.glob(pattern))
     if not matches:
         raise FileNotFoundError(
-            f"No checkpoints found for variant '{model_variant}' in {MODEL_PARAMS_DIR}"
+            f"No checkpoints found for variant '{model_variant}' in {base}"
         )
     return matches[-1]
 
 
-def load_checkpoint(model_variant: str, checkpoint: Path | None = None):
+def load_checkpoint(
+    model_variant: str,
+    checkpoint: Path | None = None,
+    params_dir: Path | None = None,
+):
     """Load params from a specific or latest checkpoint for a model variant."""
-    path = checkpoint or latest_checkpoint_path(model_variant)
+    path = checkpoint or latest_checkpoint_path(model_variant, params_dir=params_dir)
     model = TwoTowerModel()
     rng = jax.random.PRNGKey(SEED)
     state = create_train_state(rng, model)

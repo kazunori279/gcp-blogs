@@ -101,13 +101,14 @@
 <body>
 <div class="header">
   <h1>Gemini Embedding 2 Search Quality Demo</h1>
-  <span class="subtitle">{{ n_products|default(0) }} products &middot; Gemini Embedding 2 &middot; Vector Search 2.0</span>
+  <span class="subtitle" id="subtitle">{{ n_products|default(0) }} products &middot; Gemini Embedding 2 &middot; Vector Search 2.0</span>
 </div>
 
 <div class="toolbar">
   <input type="text" id="query" value="{{ default_query }}" placeholder="Enter a search query..." autofocus>
   <button id="nextBtn" onclick="nextQuery()">Next Query</button>
   <button id="clearBtn" onclick="clearSearch()" style="background:#666">Clear</button>
+  <select id="datasetSelect" onchange="switchDataset(this.value)" style="margin-left:auto"></select>
   <span class="status" id="status"></span>
 </div>
 
@@ -159,7 +160,51 @@
 </div>
 
 <script>
-const RELEVANCE_LABELS = {E: "Exact match", S: "Substitute", C: "Complement", I: "Irrelevant"};
+const DATASETS_INFO = {{ datasets_info | tojson }};
+let currentDataset = '{{ default_dataset }}';
+let currentGradeConfig = null;
+for (const ds of DATASETS_INFO.datasets) {
+  if (ds.name === currentDataset) {
+    currentGradeConfig = { order: ds.grade_order, colors: ds.grade_colors, names: ds.grade_names };
+    break;
+  }
+}
+
+function hexToRgba(hex) {
+  const r = parseInt(hex.slice(1,3), 16), g = parseInt(hex.slice(3,5), 16), b = parseInt(hex.slice(5,7), 16);
+  return [r, g, b, 255];
+}
+function gradeConfigColors() {
+  const out = {};
+  if (currentGradeConfig) {
+    for (const [k, v] of Object.entries(currentGradeConfig.colors)) out[k] = hexToRgba(v);
+  }
+  return out;
+}
+function isLightColor(hex) {
+  const r = parseInt(hex.slice(1,3), 16), g = parseInt(hex.slice(3,5), 16), b = parseInt(hex.slice(5,7), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150;
+}
+function gradeBgStyle(hex) {
+  return `background:${hex};color:${isLightColor(hex) ? '#333' : 'white'}`;
+}
+function resultBgHex(hex) {
+  const r = parseInt(hex.slice(1,3), 16), g = parseInt(hex.slice(3,5), 16), b = parseInt(hex.slice(5,7), 16);
+  return `rgba(${r},${g},${b},0.2)`;
+}
+
+(function initDatasetSelect() {
+  const sel = document.getElementById('datasetSelect');
+  for (const ds of DATASETS_INFO.datasets) {
+    const opt = document.createElement('option');
+    opt.value = ds.name;
+    opt.textContent = ds.display_name;
+    if (ds.name === currentDataset) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  if (DATASETS_INFO.datasets.length <= 1) sel.style.display = 'none';
+})();
+
 const METRICS_BY_METHOD = {};
 const LABEL_TO_METHOD = { 'Similarity': 'similarity', 'Two-Tower': 'tt_similarity', 'Retrieval': 'retrieval' };
 let activeTab = 'results';
@@ -194,7 +239,7 @@ async function nextQuery() {
   const btn = document.getElementById("nextBtn");
   btn.disabled = true;
   try {
-    const resp = await fetch("/next_query");
+    const resp = await fetch(`/next_query?dataset=${currentDataset}`);
     const data = await resp.json();
     clearSearch();
     document.getElementById("query").value = data.query;
@@ -250,12 +295,13 @@ async function fetchSearchResults(query) {
     const resp = await fetch("/search", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({query})
+      body: JSON.stringify({query, dataset: currentDataset})
     });
     const data = await resp.json();
     if (data.error) {
       results.innerHTML = '<div class="no-results">Error: ' + data.error + '</div>';
     } else {
+      if (data.grade_config) currentGradeConfig = data.grade_config;
       renderResults(data);
     }
   } catch (e) {
@@ -307,34 +353,35 @@ function renderResults(data) {
       </div>`;
     }).join("") : "";
 
+    const gc = currentGradeConfig;
+    const gradeOrder = gc ? gc.order : ['E','S','C','I'];
+    const lastGrade = gradeOrder[gradeOrder.length - 1];
     const top10 = col.results.slice(0, 10);
-    const gradeCounts = {E: 0, S: 0, C: 0, I: 0};
+    const gradeCounts = {};
+    for (const g of gradeOrder) gradeCounts[g] = 0;
     for (const r of top10) {
       if (r.relevance && gradeCounts.hasOwnProperty(r.relevance)) {
         gradeCounts[r.relevance]++;
       } else {
-        gradeCounts['I']++;
+        gradeCounts[lastGrade]++;
       }
     }
     const gradeBar = top10.length > 0 ? `<div class="relevance-bar">
       <div class="relevance-bar-label">Top-10 relevance</div>
       <div class="relevance-bar-track">
-        ${['E','S','C','I'].map(g => gradeCounts[g] > 0
-          ? `<div class="relevance-bar-seg relevance-bar-seg-${g}" style="flex:${gradeCounts[g]}">${gradeCounts[g]} ${g}</div>`
+        ${gradeOrder.map(g => gradeCounts[g] > 0
+          ? `<div class="relevance-bar-seg" style="flex:${gradeCounts[g]};${gradeBgStyle(gc.colors[g])}">${gradeCounts[g]} ${g}</div>`
           : '').join('')}
       </div>
       <div class="relevance-legend">
-        <span class="relevance-legend-item"><span class="relevance-legend-dot" style="background:#1a73e8"></span>Exact</span>
-        <span class="relevance-legend-item"><span class="relevance-legend-dot" style="background:#4d9cf6"></span>Substitute</span>
-        <span class="relevance-legend-item"><span class="relevance-legend-dot" style="background:#a8c7fa"></span>Complement</span>
-        <span class="relevance-legend-item"><span class="relevance-legend-dot" style="background:#e8eaed"></span>Irrelevant</span>
+        ${gradeOrder.map(g => `<span class="relevance-legend-item"><span class="relevance-legend-dot" style="background:${gc.colors[g]}"></span>${gc.names[g]}</span>`).join('')}
       </div>
     </div>` : '';
 
     const isBase = col.label === 'BM25';
     const itemsHtml = col.results.map(r => {
-      let badgeHtml = r.relevance
-        ? `<span class="badge badge-${r.relevance}">${RELEVANCE_LABELS[r.relevance] || r.relevance}</span>`
+      let badgeHtml = r.relevance && gc
+        ? `<span class="badge" style="${gradeBgStyle(gc.colors[r.relevance])}">${gc.names[r.relevance] || r.relevance}</span>`
         : "";
       let diffHtml = "";
       if (!isBase && baseCol) {
@@ -347,8 +394,8 @@ function renderResults(data) {
           else if (delta < 0) diffHtml = `<span class="rank-diff rank-diff-down">↓${-delta}</span>`;
         }
       }
-      const relClass = r.relevance ? " result-" + r.relevance : "";
-      return `<div class="result${relClass}">
+      const relStyle = (r.relevance && gc) ? ` style="background:${resultBgHex(gc.colors[r.relevance])}"` : "";
+      return `<div class="result"${relStyle}>
         <span class="result-rank">#${r.rank}</span>
         <div class="result-title">${escapeHtml(r.title)}</div>
         <div class="result-meta">
@@ -392,12 +439,7 @@ const METHOD_COLORS = {
 const DIM_COLOR = [218,220,224,40];
 const HIGHLIGHT_COLOR = [234,67,53,255];
 const QUERY_COLOR = [15,157,88,255];
-const GRADE_COLORS = {
-  E: [26,115,232,255],
-  S: [77,156,246,255],
-  C: [168,199,250,255],
-  I: [232,234,237,255],
-};
+let GRADE_COLORS = gradeConfigColors();
 const UNKNOWN_COLOR = [232,234,237,255];
 const DEFAULT_ALPHA = 150;
 const TOP_K_LABELS = 10;
@@ -418,7 +460,7 @@ let vizDirty = false;
 
 async function vizLoadProducts() {
   if (vizProductIds) return;
-  const resp = await fetch('/viz/products');
+  const resp = await fetch(`/viz/products?dataset=${currentDataset}`);
   const data = await resp.json();
   vizProductIds = data.ids;
   vizProductTitles = data.titles;
@@ -430,7 +472,7 @@ async function vizLoadProducts() {
 
 async function loadBinaryCoords(method) {
   if (coordData[method]) return coordData[method];
-  const resp = await fetch(`/viz/coords/${method}`);
+  const resp = await fetch(`/viz/coords/${method}?dataset=${currentDataset}`);
   const buf = await resp.arrayBuffer();
   const view = new DataView(buf);
   const n = view.getUint32(0, true);
@@ -449,7 +491,7 @@ async function loadBinaryCoords(method) {
 async function loadClusters(method) {
   if (clusterData[method]) return;
   try {
-    const resp = await fetch(`/viz/clusters/${method}`);
+    const resp = await fetch(`/viz/clusters/${method}?dataset=${currentDataset}`);
     clusterData[method] = await resp.json();
   } catch (e) {
     clusterData[method] = [];
@@ -759,14 +801,18 @@ function createMapInstance(canvasId, tooltipId, badgeId, loadingId, relBarId, de
       return;
     }
     const top10 = ranked.slice(0, 10);
-    const counts = {E: 0, S: 0, C: 0, I: 0};
+    const gc = currentGradeConfig;
+    const gradeOrder = gc ? gc.order : ['E','S','C','I'];
+    const lastGrade = gradeOrder[gradeOrder.length - 1];
+    const counts = {};
+    for (const g of gradeOrder) counts[g] = 0;
     for (const idx of top10) {
       const grade = rels ? rels.get(idx) : null;
       if (grade && counts.hasOwnProperty(grade)) counts[grade]++;
-      else counts['I']++;
+      else counts[lastGrade]++;
     }
-    const segs = ['E','S','C','I'].map(g => counts[g] > 0
-      ? `<div class="relevance-bar-seg relevance-bar-seg-${g}" style="flex:${counts[g]}">${counts[g]} ${g}</div>`
+    const segs = gradeOrder.map(g => counts[g] > 0
+      ? `<div class="relevance-bar-seg" style="flex:${counts[g]};${gradeBgStyle(gc.colors[g])}">${counts[g]} ${g}</div>`
       : '').join('');
     const metrics = METRICS_BY_METHOD[method] || {};
     const mHtml = ['RR@10','NDCG@10','Recall@10'].map(k => {
@@ -801,7 +847,7 @@ async function fetchVizResults(query) {
     const resp = await fetch('/viz/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, dataset: currentDataset }),
     });
     const data = await resp.json();
     if (data.error) return;
@@ -851,6 +897,43 @@ function vizClearSearch() {
 }
 
 {% endif %}
+
+async function switchDataset(name) {
+  currentDataset = name;
+  for (const ds of DATASETS_INFO.datasets) {
+    if (ds.name === name) {
+      currentGradeConfig = { order: ds.grade_order, colors: ds.grade_colors, names: ds.grade_names };
+      document.getElementById('subtitle').textContent =
+        `${ds.n_docs.toLocaleString()} ${ds.doc_noun} · Gemini Embedding 2 · Vector Search 2.0`;
+      break;
+    }
+  }
+  {% if methods %}
+  GRADE_COLORS = gradeConfigColors();
+  for (const k in coordData) delete coordData[k];
+  for (const k in clusterData) delete clusterData[k];
+  vizProductIds = null; vizProductTitles = null; vizIdIndex = {};
+  vizHighlightSets = {}; vizRankedResults = {}; vizRelevance = {};
+  vizIsTestQuery = false; vizCurrentQuery = '';
+  for (const k in METRICS_BY_METHOD) delete METRICS_BY_METHOD[k];
+  if (vizInitialized) {
+    vizInitialized = false;
+    for (const inst of mapInstances) {
+      inst.clearBadge(); inst.updateRelevanceBar();
+      if (inst.deckInstance) { inst.deckInstance.finalize(); inst.deckInstance = null; }
+      document.getElementById(inst === mapLeft ? 'loadingLeft' : 'loadingRight').style.display = 'flex';
+    }
+  }
+  {% endif %}
+  await nextQuery();
+  {% if methods %}
+  await vizLoadProducts();
+  await Promise.all([
+    loadBinaryCoords(mapLeft.method).then(() => loadClusters(mapLeft.method)),
+    loadBinaryCoords(mapRight.method).then(() => loadClusters(mapRight.method)),
+  ]);
+  {% endif %}
+}
 
 // ── Init ──
 doSearch();

@@ -27,6 +27,14 @@ COLLECTION_BASELINE = "tt-demo-baseline-v4"
 COLLECTION_TWOTOWER = "tt-demo-twotower-v4"
 COLLECTION_TWOTOWER_SIMILARITY = "tt-demo-twotower-sim-v4"
 COLLECTION_TWOTOWER_RETRIEVAL = "tt-demo-twotower-ret-v4"
+
+MSMARCO_COLLECTION_SIMILARITY = "tt-msmarco-sim-v1"
+MSMARCO_COLLECTION_BM25 = "tt-msmarco-bm25-v1"
+MSMARCO_COLLECTION_BASELINE = "tt-msmarco-baseline-v1"
+MSMARCO_COLLECTION_TWOTOWER = "tt-msmarco-twotower-v1"
+MSMARCO_COLLECTION_TWOTOWER_SIMILARITY = "tt-msmarco-twotower-sim-v1"
+MSMARCO_COLLECTION_TWOTOWER_RETRIEVAL = "tt-msmarco-twotower-ret-v1"
+
 VECTOR_FIELD = "embedding"
 SPARSE_VECTOR_FIELD = "sparse_embedding"
 
@@ -34,8 +42,38 @@ GCS_BUCKET = "gcp-samples-ic0-tt-demo"
 
 DATA_DIR = Path("data")
 MODEL_PARAMS_DIR = DATA_DIR / "model_params"
+MSMARCO_MODEL_PARAMS_DIR = DATA_DIR / "model_params_msmarco"
 UMAP_DIR = DATA_DIR / "umap"
+MSMARCO_UMAP_DIR = DATA_DIR / "umap_msmarco"
 UMAP_METHODS = ["similarity", "retrieval", "tt_similarity", "tt_retrieval"]
+
+
+def collection_names(dataset: str = "esci") -> dict[str, str]:
+    if dataset == "msmarco":
+        return {
+            "similarity": MSMARCO_COLLECTION_SIMILARITY,
+            "bm25": MSMARCO_COLLECTION_BM25,
+            "baseline": MSMARCO_COLLECTION_BASELINE,
+            "twotower": MSMARCO_COLLECTION_TWOTOWER,
+            "twotower_similarity": MSMARCO_COLLECTION_TWOTOWER_SIMILARITY,
+            "twotower_retrieval": MSMARCO_COLLECTION_TWOTOWER_RETRIEVAL,
+        }
+    return {
+        "similarity": COLLECTION_SIMILARITY,
+        "bm25": COLLECTION_BM25,
+        "baseline": COLLECTION_BASELINE,
+        "twotower": COLLECTION_TWOTOWER,
+        "twotower_similarity": COLLECTION_TWOTOWER_SIMILARITY,
+        "twotower_retrieval": COLLECTION_TWOTOWER_RETRIEVAL,
+    }
+
+
+def model_params_dir(dataset: str = "esci") -> Path:
+    return MSMARCO_MODEL_PARAMS_DIR if dataset == "msmarco" else MODEL_PARAMS_DIR
+
+
+def umap_dir(dataset: str = "esci") -> Path:
+    return MSMARCO_UMAP_DIR if dataset == "msmarco" else UMAP_DIR
 
 MAX_WORKERS = 10
 MAX_RETRIES = 5

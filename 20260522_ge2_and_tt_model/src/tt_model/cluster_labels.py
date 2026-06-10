@@ -13,7 +13,7 @@ from tqdm import tqdm
 from tt_model.config import LABEL_MODEL, UMAP_DIR, UMAP_METHODS
 from tt_model.embed import _get_client
 
-STOPWORDS = frozenset(
+STOPWORDS_BASE = frozenset(
     "a an the and or but in on at to for of with by from is are was were be "
     "been being have has had do does did will would shall should may might can "
     "could not no nor so as if then than that this these those it its i me my "
@@ -21,7 +21,12 @@ STOPWORDS = frozenset(
     "more most other such only also very just how what which who whom when "
     "where why out up down off over under again further once here there about "
     "above below between through during before after into too set get got new "
-    "one two per pack free size inch black white blue red green pink color "
+    "one two per".split()
+)
+
+# Default: ESCI ecommerce stopwords for backward compatibility
+STOPWORDS = STOPWORDS_BASE | frozenset(
+    "pack free size inch black white blue red green pink color "
     "large small medium extra compatible fits fit use used great best high "
     "quality made make premium pro plus super ultra mini max style design "
     "type model version edition series part without love life day kids men "
@@ -36,15 +41,19 @@ MAX_WORKERS = 10
 MAX_RETRIES = 3
 
 
-def _tokenize(text: str) -> list[str]:
-    return [w for w in re.findall(r"[a-z]+", text.lower()) if len(w) > 2 and w not in STOPWORDS]
+def _tokenize(text: str, stopwords: frozenset[str] = STOPWORDS) -> list[str]:
+    return [w for w in re.findall(r"[a-z]+", text.lower()) if len(w) > 2 and w not in stopwords]
 
 
-def _cluster_label_heuristic(titles: list[str], n_terms: int = 2) -> str:
+def _cluster_label_heuristic(
+    titles: list[str],
+    n_terms: int = 2,
+    stopwords: frozenset[str] = STOPWORDS,
+) -> str:
     bigram_counts: Counter[tuple[str, str]] = Counter()
     unigram_counts: Counter[str] = Counter()
     for title in titles:
-        tokens = _tokenize(title)
+        tokens = _tokenize(title, stopwords)
         unigram_counts.update(set(tokens))
         for a, b in zip(tokens, tokens[1:]):
             bigram_counts[(a, b)] += 1
@@ -56,12 +65,16 @@ def _cluster_label_heuristic(titles: list[str], n_terms: int = 2) -> str:
     return " / ".join(t.title() for t in top)
 
 
-def _cluster_label_llm(texts: list[str], use_titles: bool = True) -> str:
+def _cluster_label_llm(
+    texts: list[str],
+    use_titles: bool = True,
+    cluster_context: str = "product titles from a cluster of similar products",
+) -> str:
     sample = random.sample(texts, min(MAX_SAMPLE, len(texts)))
     if use_titles:
         items = "\n".join(f"- {t}" for t in sample)
         prompt = (
-            "Here are sample product titles from a cluster of similar products:\n\n"
+            f"Here are sample {cluster_context}:\n\n"
             f"{items}\n\n"
             "Generate a short category label (2-4 words) that describes this group. "
             "Reply with ONLY the label, nothing else."
@@ -105,31 +118,33 @@ def _run_hdbscan(coords_2d: np.ndarray, min_cluster_size: int) -> np.ndarray:
 def compute_clusters_for_method(
     x: np.ndarray,
     y: np.ndarray,
-    product_titles: list[str],
+    doc_texts: list[str],
+    cluster_context: str = "product titles from a cluster of similar products",
+    stopwords: frozenset[str] = STOPWORDS,
 ) -> list[dict]:
     coords = np.column_stack([x, y])
 
-    # --- Level 1 (fine): label from product titles ---
+    # --- Level 1 (fine): label from document texts ---
     fine_labels_arr = _run_hdbscan(coords, FINE_MIN_CLUSTER_SIZE)
     fine_cids = sorted(set(fine_labels_arr) - {-1})
 
     fine_cluster_data = []
     for cid in fine_cids:
         mask = fine_labels_arr == cid
-        titles_in = [product_titles[i] for i in np.where(mask)[0]]
+        texts_in = [doc_texts[i] for i in np.where(mask)[0]]
         fine_cluster_data.append({
             "cid": cid,
             "mask": mask,
             "cx": float(x[mask].mean()),
             "cy": float(y[mask].mean()),
             "size": int(mask.sum()),
-            "titles": titles_in,
+            "titles": texts_in,
         })
 
     print(f"  Labeling {len(fine_cluster_data)} fine clusters with {LABEL_MODEL}...")
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = {
-            pool.submit(_cluster_label_llm, c["titles"], True): i
+            pool.submit(_cluster_label_llm, c["titles"], True, cluster_context): i
             for i, c in enumerate(fine_cluster_data)
         }
         for f in tqdm(as_completed(futures), total=len(futures), desc="  Fine labels"):
@@ -149,7 +164,6 @@ def compute_clusters_for_method(
     coarse_cluster_data = []
     for cid in coarse_cids:
         coarse_mask = coarse_labels_arr == cid
-        # Find fine clusters whose centers fall within this coarse cluster
         child_labels = []
         for fc in fine_cluster_data:
             fc_cx, fc_cy = fc["cx"], fc["cy"]
@@ -157,7 +171,7 @@ def compute_clusters_for_method(
             if coarse_mask[fc_idx]:
                 child_labels.append(fc["label"])
         if not child_labels:
-            child_labels = [product_titles[i] for i in np.where(coarse_mask)[0][:MAX_SAMPLE]]
+            child_labels = [doc_texts[i] for i in np.where(coarse_mask)[0][:MAX_SAMPLE]]
         coarse_cluster_data.append({
             "cx": float(x[coarse_mask].mean()),
             "cy": float(y[coarse_mask].mean()),
@@ -185,13 +199,20 @@ def compute_clusters_for_method(
 
 
 def precompute_cluster_labels(
-    product_ids: list[str],
-    product_titles: list[str],
+    doc_ids: list[str],
+    doc_texts: list[str],
+    config=None,
+    output_dir=None,
 ):
-    UMAP_DIR.mkdir(parents=True, exist_ok=True)
+    from pathlib import Path
+    base = Path(output_dir) if output_dir else UMAP_DIR
+    base.mkdir(parents=True, exist_ok=True)
+
+    cluster_context = config.cluster_context if config else "product titles from a cluster of similar products"
+    sw = STOPWORDS_BASE | config.stopwords_extra if config else STOPWORDS
 
     for method in UMAP_METHODS:
-        path = UMAP_DIR / f"{method}.npz"
+        path = base / f"{method}.npz"
         if not path.exists():
             print(f"  Skipping {method} — no UMAP coords")
             continue
@@ -201,22 +222,28 @@ def precompute_cluster_labels(
         x, y = data["x"], data["y"]
         ids_in_file = data["ids"].tolist()
 
-        title_map = dict(zip(product_ids, product_titles))
-        titles = [title_map.get(pid, "") for pid in ids_in_file]
+        text_map = dict(zip(doc_ids, doc_texts))
+        texts = [text_map.get(pid, "") for pid in ids_in_file]
 
-        clusters = compute_clusters_for_method(x, y, titles)
+        clusters = compute_clusters_for_method(
+            x, y, texts,
+            cluster_context=cluster_context,
+            stopwords=sw,
+        )
 
         coarse = sum(1 for c in clusters if c["level"] == 0)
         fine = sum(1 for c in clusters if c["level"] == 1)
         print(f"  {coarse} coarse clusters, {fine} fine clusters")
 
-        out_path = UMAP_DIR / f"{method}_clusters.json"
+        out_path = base / f"{method}_clusters.json"
         with open(out_path, "w") as f:
             json.dump(clusters, f)
         print(f"  Saved to {out_path}")
 
 
-def load_cluster_labels(method: str) -> list[dict]:
-    path = UMAP_DIR / f"{method}_clusters.json"
+def load_cluster_labels(method: str, umap_dir=None) -> list[dict]:
+    from pathlib import Path
+    base = Path(umap_dir) if umap_dir else UMAP_DIR
+    path = base / f"{method}_clusters.json"
     with open(path) as f:
         return json.load(f)

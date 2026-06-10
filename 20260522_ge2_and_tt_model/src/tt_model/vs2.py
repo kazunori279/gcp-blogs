@@ -402,6 +402,7 @@ def deploy_and_evaluate(
     tt_similarity_query_embs: np.ndarray,
     tt_retrieval_query_embs: np.ndarray,
     qrels: dict,
+    collections: dict[str, str] | None = None,
 ):
     """Deploy all collections to VS2 and run evaluation."""
     from tt_model.evaluate import (
@@ -411,34 +412,42 @@ def deploy_and_evaluate(
         print_metrics,
     )
 
+    c = collections or {
+        "bm25": COLLECTION_BM25,
+        "similarity": COLLECTION_SIMILARITY,
+        "baseline": COLLECTION_BASELINE,
+        "twotower_similarity": COLLECTION_TWOTOWER_SIMILARITY,
+        "twotower_retrieval": COLLECTION_TWOTOWER_RETRIEVAL,
+    }
+
     # Create collections
-    vs2.create_sparse_collection(COLLECTION_BM25)
-    vs2.create_collection(COLLECTION_SIMILARITY, EMBEDDING_DIM)
-    vs2.create_collection(COLLECTION_BASELINE, EMBEDDING_DIM)
-    vs2.create_collection(COLLECTION_TWOTOWER_SIMILARITY, OUTPUT_DIM)
-    vs2.create_collection(COLLECTION_TWOTOWER_RETRIEVAL, OUTPUT_DIM)
+    vs2.create_sparse_collection(c["bm25"])
+    vs2.create_collection(c["similarity"], EMBEDDING_DIM)
+    vs2.create_collection(c["baseline"], EMBEDDING_DIM)
+    vs2.create_collection(c["twotower_similarity"], OUTPUT_DIM)
+    vs2.create_collection(c["twotower_retrieval"], OUTPUT_DIM)
 
     # Insert data
     sparse_vectors = [
         bm25_index.document_sparse_vector(i, weighting="bm25_tf").to_vs2()["sparse"]
         for i in range(len(passage_ids))
     ]
-    vs2.batch_insert_sparse(COLLECTION_BM25, passage_ids, sparse_vectors, passage_texts)
-    vs2.batch_insert(COLLECTION_SIMILARITY, passage_ids, sim_embs, passage_texts)
-    vs2.batch_insert(COLLECTION_BASELINE, passage_ids, baseline_embs, passage_texts)
+    vs2.batch_insert_sparse(c["bm25"], passage_ids, sparse_vectors, passage_texts)
+    vs2.batch_insert(c["similarity"], passage_ids, sim_embs, passage_texts)
+    vs2.batch_insert(c["baseline"], passage_ids, baseline_embs, passage_texts)
     vs2.batch_insert(
-        COLLECTION_TWOTOWER_SIMILARITY, passage_ids, tt_similarity_embs, passage_texts
+        c["twotower_similarity"], passage_ids, tt_similarity_embs, passage_texts
     )
     vs2.batch_insert(
-        COLLECTION_TWOTOWER_RETRIEVAL, passage_ids, tt_retrieval_embs, passage_texts
+        c["twotower_retrieval"], passage_ids, tt_retrieval_embs, passage_texts
     )
 
     # Create indexes (async)
-    bm25_op = vs2.create_sparse_index(COLLECTION_BM25)
-    sim_op = vs2.create_index(COLLECTION_SIMILARITY)
-    baseline_op = vs2.create_index(COLLECTION_BASELINE)
-    tt_similarity_op = vs2.create_index(COLLECTION_TWOTOWER_SIMILARITY)
-    tt_retrieval_op = vs2.create_index(COLLECTION_TWOTOWER_RETRIEVAL)
+    bm25_op = vs2.create_sparse_index(c["bm25"])
+    sim_op = vs2.create_index(c["similarity"])
+    baseline_op = vs2.create_index(c["baseline"])
+    tt_similarity_op = vs2.create_index(c["twotower_similarity"])
+    tt_retrieval_op = vs2.create_index(c["twotower_retrieval"])
 
     print("\n  Waiting for indexes to build (this may take ~30 minutes)...")
     bm25_op.result()
@@ -460,7 +469,7 @@ def deploy_and_evaluate(
     for i, qid in enumerate(tqdm(query_ids)):
         query_weights = bm25_index.query_term_weights(query_texts[i])
         response = vs2.search_sparse(
-            COLLECTION_BM25,
+            c["bm25"],
             list(query_weights.keys()),
             list(query_weights.values()),
         )
@@ -480,16 +489,16 @@ def deploy_and_evaluate(
 
     # Evaluate via VS2 search across all collections
     for label, collection_id, q_embs in [
-        ("VS2 Similarity", COLLECTION_SIMILARITY, sim_query_embs),
-        ("VS2 Retrieval", COLLECTION_BASELINE, baseline_query_embs),
+        ("VS2 Similarity", c["similarity"], sim_query_embs),
+        ("VS2 Retrieval", c["baseline"], baseline_query_embs),
         (
             "VS2 TT Similarity",
-            COLLECTION_TWOTOWER_SIMILARITY,
+            c["twotower_similarity"],
             tt_similarity_query_embs,
         ),
         (
             "VS2 TT Retrieval",
-            COLLECTION_TWOTOWER_RETRIEVAL,
+            c["twotower_retrieval"],
             tt_retrieval_query_embs,
         ),
     ]:
@@ -517,7 +526,7 @@ def deploy_and_evaluate(
     print(f"\n  Searching {label}...")
     for i, qid in enumerate(tqdm(query_ids)):
         reranked = vs2.search_with_reranker(
-            COLLECTION_BASELINE,
+            c["baseline"],
             query_text=query_texts[i],
             query_vector=baseline_query_embs[i].tolist(),
         )
@@ -538,7 +547,7 @@ def deploy_and_evaluate(
     print(f"\n  Searching {label}...")
     for i, qid in enumerate(tqdm(query_ids)):
         reranked = vs2.search_with_reranker(
-            COLLECTION_TWOTOWER_SIMILARITY,
+            c["twotower_similarity"],
             query_text=query_texts[i],
             query_vector=tt_similarity_query_embs[i].tolist(),
         )
@@ -559,7 +568,7 @@ def deploy_and_evaluate(
     print(f"\n  Searching {label}...")
     for i, qid in enumerate(tqdm(query_ids)):
         reranked = vs2.search_with_reranker(
-            COLLECTION_TWOTOWER_RETRIEVAL,
+            c["twotower_retrieval"],
             query_text=query_texts[i],
             query_vector=tt_retrieval_query_embs[i].tolist(),
         )
@@ -586,28 +595,38 @@ def deploy_single_collection(
     passage_texts: list[str],
     bm25_index=None,
     dense_embeddings: np.ndarray | None = None,
+    collections: dict[str, str] | None = None,
 ):
     """Deploy a single collection without touching the others."""
+    c = collections or {
+        "bm25": COLLECTION_BM25,
+        "similarity": COLLECTION_SIMILARITY,
+        "baseline": COLLECTION_BASELINE,
+        "twotower_similarity": COLLECTION_TWOTOWER_SIMILARITY,
+        "twotower_retrieval": COLLECTION_TWOTOWER_RETRIEVAL,
+    }
+
     if target == "bm25":
         if bm25_index is None:
             raise ValueError("bm25_index is required to deploy the BM25 sparse collection")
-        vs2.create_sparse_collection(COLLECTION_BM25)
+        coll_id = c["bm25"]
+        vs2.create_sparse_collection(coll_id)
         sparse_vectors = [
             bm25_index.document_sparse_vector(i, weighting="bm25_tf").to_vs2()["sparse"]
             for i in range(len(passage_ids))
         ]
-        vs2.batch_insert_sparse(COLLECTION_BM25, passage_ids, sparse_vectors, passage_texts)
-        op = vs2.create_sparse_index(COLLECTION_BM25)
+        vs2.batch_insert_sparse(coll_id, passage_ids, sparse_vectors, passage_texts)
+        op = vs2.create_sparse_index(coll_id)
         print("\n  Waiting for BM25 sparse index to build...")
         op.result()
         print("  BM25 sparse index ready")
-        return COLLECTION_BM25
+        return coll_id
 
     dense_targets = {
-        "similarity": (COLLECTION_SIMILARITY, EMBEDDING_DIM),
-        "retrieval": (COLLECTION_BASELINE, EMBEDDING_DIM),
-        "tt-sim": (COLLECTION_TWOTOWER_SIMILARITY, OUTPUT_DIM),
-        "tt-ret": (COLLECTION_TWOTOWER_RETRIEVAL, OUTPUT_DIM),
+        "similarity": (c["similarity"], EMBEDDING_DIM),
+        "retrieval": (c["baseline"], EMBEDDING_DIM),
+        "tt-sim": (c["twotower_similarity"], OUTPUT_DIM),
+        "tt-ret": (c["twotower_retrieval"], OUTPUT_DIM),
     }
     if target not in dense_targets:
         raise ValueError(f"Unknown deploy target: {target}")

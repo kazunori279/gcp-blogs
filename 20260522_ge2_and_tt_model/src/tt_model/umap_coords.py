@@ -44,9 +44,12 @@ def precompute_all(
     ret_product_embs: np.ndarray,
     tt_sim_params,
     tt_ret_params,
-    product_ids: list[str],
+    doc_ids: list[str],
+    umap_dir=None,
 ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    UMAP_DIR.mkdir(parents=True, exist_ok=True)
+    from pathlib import Path
+    out_dir = Path(umap_dir) if umap_dir else UMAP_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     embedding_sets = {
         "similarity": sim_product_embs,
@@ -57,21 +60,23 @@ def precompute_all(
 
     results = {}
     for method in UMAP_METHODS:
-        print(f"\n--- UMAP: {method} ({len(product_ids):,} products) ---")
+        print(f"\n--- UMAP: {method} ({len(doc_ids):,} items) ---")
         embs = embedding_sets[method]
         coords = compute_umap(embs)
         x, y = _normalize_coords(coords)
 
-        out_path = UMAP_DIR / f"{method}.npz"
-        np.savez_compressed(out_path, ids=np.array(product_ids), x=x, y=y)
+        out_path = out_dir / f"{method}.npz"
+        np.savez_compressed(out_path, ids=np.array(doc_ids), x=x, y=y)
         print(f"  Saved to {out_path}")
         results[method] = (x, y)
 
     return results
 
 
-def load_coords(method: str) -> tuple[list[str], np.ndarray, np.ndarray]:
-    path = UMAP_DIR / f"{method}.npz"
+def load_coords(method: str, umap_dir=None) -> tuple[list[str], np.ndarray, np.ndarray]:
+    from pathlib import Path
+    base = Path(umap_dir) if umap_dir else UMAP_DIR
+    path = base / f"{method}.npz"
     data = np.load(path, allow_pickle=True)
     ids = data["ids"].tolist()
     return ids, data["x"], data["y"]

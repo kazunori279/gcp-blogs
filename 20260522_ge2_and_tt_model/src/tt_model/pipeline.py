@@ -3,12 +3,17 @@ import argparse
 import numpy as np
 
 from tt_model.bm25 import BM25Index, evaluate_bm25_index
-from tt_model.data import align_training_pairs, load_esci
+from tt_model.config import SEED, VALIDATION_FRAC, collection_names, model_params_dir
+from tt_model.data import (
+    DatasetConfig,
+    align_training_pairs,
+    get_dataset_config,
+    load_dataset_by_config,
+    split_train_validation_queries,
+)
 from tt_model.embed import compute_and_upload_embeddings, load_embeddings
 from tt_model.evaluate import evaluate_retrieval, print_comparison, print_metrics
 from tt_model.train import apply_tower, load_checkpoint, train
-from tt_model.config import SEED, VALIDATION_FRAC
-from tt_model.data import split_train_validation_queries
 
 EMBEDDING_KEYS = (
     "sim_products",
@@ -41,11 +46,14 @@ def _expected_embedding_metadata(
     expected_ids: list[str],
     task_type: str | None,
     text_role: str,
+    id_scheme: str | None = None,
 ) -> dict:
+    if id_scheme is None:
+        id_scheme = "sha256(query_text)" if "queries" in dataset_name else "product_id"
     return {
         "dataset_name": dataset_name,
         "split": split,
-        "id_scheme": "sha256(query_text)" if "queries" in dataset_name else "product_id",
+        "id_scheme": id_scheme,
         "count": len(expected_ids),
         "task_type": task_type or "retrieval",
         "text_role": text_role,
@@ -76,6 +84,7 @@ def _load_or_compute_embeddings(
     split: str,
     blob_names: dict[str, str],
     blob_key: str,
+    id_scheme: str | None = None,
 ) -> np.ndarray:
     expected_metadata = _expected_embedding_metadata(
         dataset_name=dataset_name,
@@ -83,6 +92,7 @@ def _load_or_compute_embeddings(
         expected_ids=expected_ids,
         task_type=task_type,
         text_role=text_role,
+        id_scheme=id_scheme,
     )
     if blob_name:
         loaded_ids, embeddings, metadata = load_embeddings(blob_name)
@@ -99,22 +109,22 @@ def _load_or_compute_embeddings(
     return embeddings
 
 
-def _load_dataset(max_products: int | None):
+def _load_dataset(config: DatasetConfig, max_docs: int | None):
     print("\n" + "=" * 60)
-    print("Step 1: Loading Amazon ESCI dataset")
+    print(f"Step 1: Loading {config.display_name} dataset")
     print("=" * 60)
-    products, train_queries, train_qrels, test_queries, test_qrels = (
-        load_esci(max_products=max_products)
+    docs, train_queries, train_qrels, test_queries, test_qrels = (
+        load_dataset_by_config(config, max_docs=max_docs)
     )
 
     return {
-        "products": products,
+        "products": docs,
         "train_queries": train_queries,
         "train_qrels": train_qrels,
         "test_queries": test_queries,
         "test_qrels": test_qrels,
-        "product_ids": list(products.keys()),
-        "product_texts": list(products.values()),
+        "product_ids": list(docs.keys()),
+        "product_texts": list(docs.values()),
         "train_query_ids": list(train_queries.keys()),
         "train_query_texts": list(train_queries.values()),
         "test_query_ids": list(test_queries.keys()),
@@ -122,7 +132,11 @@ def _load_dataset(max_products: int | None):
     }
 
 
-def _prepare_embeddings(dataset: dict, embeddings: dict[str, str] | None):
+def _prepare_embeddings(
+    dataset: dict,
+    embeddings: dict[str, str] | None,
+    config: DatasetConfig,
+):
     print("\n" + "=" * 60)
     print("Step 2: Embeddings")
     print("=" * 60)
@@ -138,71 +152,81 @@ def _prepare_embeddings(dataset: dict, embeddings: dict[str, str] | None):
     test_query_ids = dataset["test_query_ids"]
     test_query_texts = dataset["test_query_texts"]
 
+    prefix = config.embedding_prefix
+    doc_id_scheme = "product_id" if config.name == "esci" else "passage_id"
+    query_id_scheme = "sha256(query_text)" if config.name == "esci" else "query_id"
+
     sim_product_embs = _load_or_compute_embeddings(
         embeddings.get("sim_products") if embeddings else None,
         product_ids,
         product_texts,
-        "esci_products",
+        f"{prefix}_products",
         "SEMANTIC_SIMILARITY",
         "product_text",
         "products",
         blob_names,
         "sim_products",
+        id_scheme=doc_id_scheme,
     )
     sim_train_query_embs = _load_or_compute_embeddings(
         embeddings.get("sim_train_queries") if embeddings else None,
         train_query_ids,
         train_query_texts,
-        "esci_train_queries",
+        f"{prefix}_train_queries",
         "SEMANTIC_SIMILARITY",
         "query_text",
         "train",
         blob_names,
         "sim_train_queries",
+        id_scheme=query_id_scheme,
     )
     sim_test_query_embs = _load_or_compute_embeddings(
         embeddings.get("sim_test_queries") if embeddings else None,
         test_query_ids,
         test_query_texts,
-        "esci_test_queries",
+        f"{prefix}_test_queries",
         "SEMANTIC_SIMILARITY",
         "query_text",
         "test",
         blob_names,
         "sim_test_queries",
+        id_scheme=query_id_scheme,
     )
     product_embs = _load_or_compute_embeddings(
         embeddings.get("products") if embeddings else None,
         product_ids,
-        [f"title: none | text: {t}" for t in product_texts],
-        "esci_products",
+        [config.doc_template.format(t=t) for t in product_texts],
+        f"{prefix}_products",
         None,
         "product_text_prefixed",
         "products",
         blob_names,
         "products",
+        id_scheme=doc_id_scheme,
     )
     train_query_embs = _load_or_compute_embeddings(
         embeddings.get("train_queries") if embeddings else None,
         train_query_ids,
-        [f"task: search result | query: {t}" for t in train_query_texts],
-        "esci_train_queries",
+        [config.query_template.format(t=t) for t in train_query_texts],
+        f"{prefix}_train_queries",
         None,
         "query_text_prefixed",
         "train",
         blob_names,
         "train_queries",
+        id_scheme=query_id_scheme,
     )
     test_query_embs = _load_or_compute_embeddings(
         embeddings.get("test_queries") if embeddings else None,
         test_query_ids,
-        [f"task: search result | query: {t}" for t in test_query_texts],
-        "esci_test_queries",
+        [config.query_template.format(t=t) for t in test_query_texts],
+        f"{prefix}_test_queries",
         None,
         "query_text_prefixed",
         "test",
         blob_names,
         "test_queries",
+        id_scheme=query_id_scheme,
     )
 
     if blob_names:
@@ -225,7 +249,11 @@ def _build_bm25_index(dataset: dict) -> BM25Index:
     return BM25Index(dataset["product_ids"], dataset["product_texts"])
 
 
-def _run_bm25(dataset: dict, bm25_index: BM25Index | None = None) -> tuple[dict[str, float], BM25Index]:
+def _run_bm25(
+    dataset: dict,
+    bm25_index: BM25Index | None = None,
+    doc_noun: str = "products",
+) -> tuple[dict[str, float], BM25Index]:
     print("\n" + "=" * 60)
     print("Step 3: BM25 baseline")
     print("=" * 60)
@@ -236,10 +264,11 @@ def _run_bm25(dataset: dict, bm25_index: BM25Index | None = None) -> tuple[dict[
         dataset["test_query_texts"],
         dataset["test_qrels"],
     )
-    print_metrics("BM25 (raw product titles)", bm25_metrics)
+    print_metrics(f"BM25 (raw {doc_noun})", bm25_metrics)
     print(
         "  Sparse vocab size: "
-        f"{len(bm25_index.token_to_id):,} terms across {len(dataset['product_ids']):,} products"
+        f"{len(bm25_index.token_to_id):,} terms across "
+        f"{len(dataset['product_ids']):,} {doc_noun}"
     )
     return bm25_metrics, bm25_index
 
@@ -297,7 +326,9 @@ def _run_two_tower_variant(
     dataset: dict,
     split_data: dict,
     reuse_checkpoint: bool = False,
+    params_dir=None,
 ):
+    from pathlib import Path
     fit_query_embs = train_query_embs[
         [split_data["train_qid_to_idx"][qid] for qid in split_data["fit_query_ids"]]
     ]
@@ -306,7 +337,7 @@ def _run_two_tower_variant(
     ]
 
     if reuse_checkpoint:
-        params, checkpoint = load_checkpoint(model_variant)
+        params, checkpoint = load_checkpoint(model_variant, params_dir=params_dir)
         print(f"Using existing {model_variant} checkpoint: {checkpoint.name}")
         val_product_embs = apply_tower(params, product_embs, "doc")
         val_query_proj = apply_tower(params, val_query_embs, "query")
@@ -322,6 +353,8 @@ def _run_two_tower_variant(
             split_data["fit_qrels"], split_data["fit_query_ids"], fit_query_embs,
             dataset["product_ids"], product_embs,
         )
+        from tt_model.train import checkpoint_path as _ckpt_path
+        save_path = _ckpt_path(model_variant, params_dir=params_dir) if params_dir else None
         state, val_metrics = train(
             train_q_aligned,
             train_d_aligned,
@@ -332,6 +365,7 @@ def _run_two_tower_variant(
             dataset["product_ids"],
             product_embs,
             model_variant=model_variant,
+            save_path=save_path,
         )
         params = state.params
 
@@ -344,14 +378,18 @@ def _run_two_tower_variant(
 
 
 def run(
-    max_products: int | None = None,
+    max_docs: int | None = None,
     deploy_vs2: bool = False,
     deploy_vs2_target: str | None = None,
     embeddings: dict[str, str] | None = None,
     stage: str = "full",
     reuse_checkpoints: bool = False,
+    dataset_name: str = "esci",
 ):
-    dataset = _load_dataset(max_products)
+    config = get_dataset_config(dataset_name)
+    colls = collection_names(dataset_name)
+    pdir = model_params_dir(dataset_name)
+    dataset = _load_dataset(config, max_docs)
 
     if deploy_vs2 and deploy_vs2_target:
         raise ValueError("Use either deploy_vs2 or deploy_vs2_target, not both")
@@ -369,9 +407,10 @@ def run(
         ret_ids, ret_product_embs, _ = load_embeddings(embeddings["products"])
         ret_product_embs = _reorder_embeddings(dataset["product_ids"], ret_ids, ret_product_embs)
 
-        sim_params, _ = load_checkpoint("similarity")
-        ret_params, _ = load_checkpoint("retrieval")
+        sim_params, _ = load_checkpoint("similarity", params_dir=pdir)
+        ret_params, _ = load_checkpoint("retrieval", params_dir=pdir)
         from tt_model.umap_coords import precompute_all as umap_precompute
+        from tt_model.config import umap_dir as _umap_dir
 
         umap_precompute(
             sim_product_embs,
@@ -379,6 +418,7 @@ def run(
             sim_params,
             ret_params,
             dataset["product_ids"],
+            umap_dir=_umap_dir(dataset_name),
         )
 
         print("\n" + "=" * 60)
@@ -389,6 +429,8 @@ def run(
         precompute_cluster_labels(
             dataset["product_ids"],
             [dataset["products"][pid] for pid in dataset["product_ids"]],
+            config=config,
+            output_dir=_umap_dir(dataset_name),
         )
         return
 
@@ -401,10 +443,11 @@ def run(
             print("=" * 60)
             print(
                 "  Sparse vocab size: "
-                f"{len(bm25_index.token_to_id):,} terms across {len(dataset['product_ids']):,} products"
+                f"{len(bm25_index.token_to_id):,} terms across "
+                f"{len(dataset['product_ids']):,} {config.doc_noun}"
             )
         else:
-            _, bm25_index = _run_bm25(dataset)
+            _, bm25_index = _run_bm25(dataset, doc_noun=config.doc_noun)
         if deploy_vs2_target == "bm25":
             from tt_model.vs2 import VS2Manager, deploy_single_collection
 
@@ -415,15 +458,16 @@ def run(
                 dataset["product_ids"],
                 dataset["product_texts"],
                 bm25_index=bm25_index,
+                collections=colls,
             )
         return
 
     needs_embeddings = stage != "bm25" or deploy_vs2_target in {
         "similarity", "retrieval", "tt-sim", "tt-ret"
     }
-    emb = _prepare_embeddings(dataset, embeddings) if needs_embeddings else None
+    emb = _prepare_embeddings(dataset, embeddings, config) if needs_embeddings else None
     bm25_index = _build_bm25_index(dataset)
-    bm25_metrics, bm25_index = _run_bm25(dataset, bm25_index=bm25_index)
+    bm25_metrics, bm25_index = _run_bm25(dataset, bm25_index=bm25_index, doc_noun=config.doc_noun)
 
     if deploy_vs2_target == "bm25":
         from tt_model.vs2 import VS2Manager, deploy_single_collection
@@ -435,6 +479,7 @@ def run(
             dataset["product_ids"],
             dataset["product_texts"],
             bm25_index=bm25_index,
+            collections=colls,
         )
         return
 
@@ -453,6 +498,7 @@ def run(
                 dataset["product_ids"],
                 dataset["product_texts"],
                 dense_embeddings=dense_embeddings,
+                collections=colls,
             )
         return
 
@@ -470,6 +516,7 @@ def run(
             dataset["product_ids"],
             dataset["product_texts"],
             dense_embeddings=dense_embeddings,
+            collections=colls,
         )
         return
     split_data = _training_split(dataset)
@@ -485,6 +532,7 @@ def run(
         dataset,
         split_data,
         reuse_checkpoint=reuse_checkpoints or stage == "eval-checkpoints",
+        params_dir=pdir,
     )
     print_metrics("Similarity Two-Tower validation checkpoint", sim_val_metrics)
     print_metrics("Two-Tower on Similarity (768d)", sim_tt_metrics)
@@ -498,6 +546,7 @@ def run(
             dataset["product_ids"],
             dataset["product_texts"],
             dense_embeddings=sim_tt_product_embs,
+            collections=colls,
         )
         return
     if stage == "train-sim":
@@ -514,6 +563,7 @@ def run(
         dataset,
         split_data,
         reuse_checkpoint=reuse_checkpoints or stage == "eval-checkpoints",
+        params_dir=pdir,
     )
     print_metrics("Retrieval Two-Tower validation checkpoint", ret_val_metrics)
     print_metrics("Two-Tower on Retrieval (768d)", ret_tt_metrics)
@@ -527,6 +577,7 @@ def run(
             dataset["product_ids"],
             dataset["product_texts"],
             dense_embeddings=ret_tt_product_embs,
+            collections=colls,
         )
         return
     if stage == "train-ret":
@@ -547,18 +598,10 @@ def run(
         change_to_label="TT Retrieval",
     )
 
-    # Step 13: Optional VS2 deployment
     if deploy_vs2:
         print("\n" + "=" * 60)
         print("Step 9: Vector Search 2.0 deployment")
         print("=" * 60)
-        from tt_model.config import (
-            COLLECTION_BM25,
-            COLLECTION_BASELINE,
-            COLLECTION_SIMILARITY,
-            COLLECTION_TWOTOWER_RETRIEVAL,
-            COLLECTION_TWOTOWER_SIMILARITY,
-        )
         from tt_model.vs2 import VS2Manager, deploy_and_evaluate
 
         vs2 = VS2Manager()
@@ -579,25 +622,30 @@ def run(
                 sim_tt_query_embs,
                 ret_tt_query_embs,
                 dataset["test_qrels"],
+                collections=colls,
             )
         finally:
             print("\nCleaning up VS2 resources...")
-            vs2.cleanup(COLLECTION_BM25)
-            vs2.cleanup(COLLECTION_SIMILARITY)
-            vs2.cleanup(COLLECTION_BASELINE)
-            vs2.cleanup(COLLECTION_TWOTOWER_SIMILARITY)
-            vs2.cleanup(COLLECTION_TWOTOWER_RETRIEVAL)
+            for coll_id in colls.values():
+                vs2.cleanup(coll_id)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Two-tower retrieval model benchmark on Amazon ESCI"
+        description="Two-tower retrieval model benchmark"
     )
     parser.add_argument(
-        "--max-products",
+        "--dataset",
+        choices=("esci", "msmarco"),
+        default="esci",
+        help="Dataset to use (default: esci)",
+    )
+    parser.add_argument(
+        "--max-products", "--max-passages",
         type=int,
         default=None,
-        help="Limit number of products (default: all)",
+        dest="max_docs",
+        help="Limit number of documents (default: all for ESCI, 500000 for MS MARCO)",
     )
     parser.add_argument(
         "--deploy-vs2",
@@ -659,10 +707,11 @@ def main():
             emb_map[key] = value
 
     run(
-        max_products=args.max_products,
+        max_docs=args.max_docs,
         deploy_vs2=args.deploy_vs2,
         deploy_vs2_target=args.deploy_vs2_target,
         embeddings=emb_map,
         stage=args.stage,
         reuse_checkpoints=args.reuse_checkpoints,
+        dataset_name=args.dataset,
     )
