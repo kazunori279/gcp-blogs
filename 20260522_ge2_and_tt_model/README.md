@@ -1,6 +1,6 @@
 # Two-Tower Retrieval Model with Gemini Embedding 2
 
-A lightweight two-tower model that learns task-specific projections on top of frozen Gemini Embedding 2 embeddings, improving search quality for product recommendation. Benchmarked on the Amazon ESCI dataset with Vector Search 2.0 deployment, reranking, and a FastAPI search demo UI.
+A lightweight two-tower model that learns task-specific projections on top of frozen Gemini Embedding 2 embeddings, improving search quality for retrieval tasks. Benchmarked on **Amazon ESCI** (product search, 4-grade relevance) and **MS MARCO** (passage ranking, binary relevance) with Vector Search 2.0 deployment and a FastAPI search demo UI that supports both datasets via a runtime switcher.
 
 ## Architecture
 
@@ -39,7 +39,11 @@ Four embedding approaches are compared, all using `gemini-embedding-2`. The repo
 
 Both two-tower variants train with a multi-positive contrastive loss, so multiple relevant products for the same query can all be treated as positives within a batch. The key difference is the frozen input space: `TT Similarity` starts from similarity embeddings, while `TT Retrieval` starts from retrieval-style embeddings with search-task prefixes.
 
-## Dataset
+## Datasets
+
+The codebase supports multiple datasets through a `DatasetConfig` abstraction. Each dataset defines its own relevance grades, colors, document/query templates, collection names, and domain-specific settings. The `--dataset` flag selects which dataset to use in the pipeline.
+
+### Amazon ESCI
 
 [Amazon ESCI](https://huggingface.co/datasets/smangrul/amazon_esci) — a large-scale product search dataset with graded relevance labels:
 
@@ -56,6 +60,17 @@ Only E and S labels are treated as positive pairs for training and evaluation. C
 |-------|---------|----------|-------|
 | Train | 17,754 | 351,961 | 279,641 |
 | Test | 3,134 | 351,961 | 49,806 |
+
+### MS MARCO (passage ranking)
+
+[BeIR/msmarco](https://huggingface.co/datasets/BeIR/msmarco) — a standard web passage ranking benchmark with binary relevance:
+
+| Label | Relevance | Score |
+|-------|-----------|-------|
+| R (Relevant) | Passage answers the query | 1 |
+| N (Not relevant) | Passage does not answer the query | 0 |
+
+The loader takes a configurable subset of the 8.84M passage corpus (default 500K), prioritizing passages that appear in the qrels so that the subset retains maximum query coverage. Queries are filtered to those with at least one relevant passage in the subset.
 
 ## Training
 
@@ -86,7 +101,9 @@ BM25 here is a lightweight lexical baseline over raw product titles only. Even t
 
 ### Vector Search 2.0 deployment
 
-The full pipeline deploys 5 collections to Vector Search 2.0 for online serving:
+The full pipeline deploys 5 collections per dataset to Vector Search 2.0 for online serving. Collection names are prefixed by dataset (`tt-demo-*` for ESCI, `tt-msmarco-*` for MS MARCO):
+
+**ESCI collections:**
 
 | Collection | Embeddings | Description |
 |------------|-----------|-------------|
@@ -96,8 +113,20 @@ The full pipeline deploys 5 collections to Vector Search 2.0 for online serving:
 | `tt-demo-twotower-sim-v4` | TT Similarity | Learned projections on similarity embeddings |
 | `tt-demo-twotower-ret-v4` | TT Retrieval | Learned projections on retrieval embeddings |
 
+**MS MARCO collections:**
+
+| Collection | Embeddings | Description |
+|------------|-----------|-------------|
+| `tt-msmarco-bm25-v1` | BM25 sparse | Passage text sparse lexical baseline |
+| `tt-msmarco-sim-v1` | Similarity | SEMANTIC_SIMILARITY task type |
+| `tt-msmarco-baseline-v1` | Retrieval | Search-task prefixed embeddings |
+| `tt-msmarco-twotower-sim-v1` | TT Similarity | Learned projections on similarity embeddings |
+| `tt-msmarco-twotower-ret-v1` | TT Retrieval | Learned projections on retrieval embeddings |
+
 With `--deploy-vs2`, the pipeline also evaluates hybrid search (vector + text) with the `semantic-ranker-fast@latest` reranker.
-The web app has two tabs sharing a single query bar. The **Results** tab compares 4 systems side by side: BM25 sparse, Similarity, Two-Tower (learned projection on similarity embeddings), and Retrieval. Each column shows a top-10 relevance grade stacked bar (Exact / Substitute / Complement / Irrelevant), per-query metrics (RR@10, NDCG@10, Recall@10), and rank diff annotations showing how each result moved relative to the BM25 baseline. The **Embedding Map** tab displays dual side-by-side maps (defaulting to Similarity vs Retrieval) for visual comparison of how each embedding space clusters search results (see below). Each map panel shows a relevance grade bar and metrics for the current query's top-10 results. A search fires both tabs in parallel, so switching between them shows results immediately without re-querying. Today the two-tower web column uses the existing `tt-demo-twotower-v4` collection; the split `tt-demo-twotower-sim-v4` and `tt-demo-twotower-ret-v4` collections are pipeline deploy targets but are not required for the current UI. The BM25 column uses the VS2 sparse collection rather than a local in-memory ranker.
+The web app has two tabs sharing a single query bar and a **dataset switcher** dropdown. The app loads all available datasets at startup (ESCI and/or MS MARCO, skipping any whose VS2 collections aren't deployed). Switching datasets updates the query pool, relevance grades, grade colors, and all visualizations dynamically — ESCI shows 4-grade E/S/C/I bars while MS MARCO shows 2-grade R/N bars.
+
+The **Results** tab compares 4 systems side by side: BM25 sparse, Similarity, Two-Tower (learned projection on similarity embeddings), and Retrieval. Each column shows a top-10 relevance grade stacked bar, per-query metrics (RR@10, NDCG@10, Recall@10), and rank diff annotations showing how each result moved relative to the BM25 baseline. The **Embedding Map** tab displays dual side-by-side maps (defaulting to Similarity vs Retrieval) for visual comparison of how each embedding space clusters search results (see below). Each map panel shows a relevance grade bar and metrics for the current query's top-10 results. A search fires both tabs in parallel, so switching between them shows results immediately without re-querying. The BM25 column uses the VS2 sparse collection rather than a local in-memory ranker.
 In practice, BM25 sparse index creation can continue past the initial `op.result()` wait window even after sparse object upload finishes. If the deploy path times out while waiting on index creation, rerun-safe ingestion still leaves the collection in place, and the most reliable readiness check is a live sparse query. The current BM25 collection has been verified queryable with a search such as `wireless mouse`.
 
 ### Embedding Map visualization
@@ -147,7 +176,7 @@ Previously computed embeddings can be loaded with the `--embeddings` flag to ski
 │   └── tt_model/
 │       ├── bm25.py              # Lightweight BM25 baseline + sparse vectors
 │       ├── config.py            # Hyperparameters and paths
-│       ├── data.py              # Amazon ESCI data loading
+│       ├── data.py              # Dataset loading (ESCI + MS MARCO) with DatasetConfig
 │       ├── embed.py             # Gemini Embedding 2 with GCS storage
 │       ├── model.py             # JAX/Flax TwoTowerModel + contrastive loss
 │       ├── train.py             # Training loop with TrainState
@@ -160,18 +189,10 @@ Previously computed embeddings can be loaded with the `--embeddings` flag to ski
 │       └── templates/
 │           └── search.html      # Search demo UI with Results + Embedding Map tabs
 └── data/
-    ├── model_params/            # Timestamped two-tower checkpoints
-    │   ├── similarity-<timestamp>.msgpack
-    │   └── retrieval-<timestamp>.msgpack
-    └── umap/                    # Precomputed UMAP 2D coordinates + cluster labels
-        ├── similarity.npz
-        ├── retrieval.npz
-        ├── tt_similarity.npz
-        ├── tt_retrieval.npz
-        ├── similarity_clusters.json
-        ├── retrieval_clusters.json
-        ├── tt_similarity_clusters.json
-        └── tt_retrieval_clusters.json
+    ├── model_params/            # ESCI two-tower checkpoints
+    ├── model_params_msmarco/    # MS MARCO two-tower checkpoints
+    ├── umap/                    # ESCI UMAP coordinates + cluster labels
+    └── umap_msmarco/            # MS MARCO UMAP coordinates + cluster labels
 ```
 
 ## Usage
@@ -179,6 +200,8 @@ Previously computed embeddings can be loaded with the `--embeddings` flag to ski
 ```bash
 # Install dependencies
 uv sync
+
+# ── ESCI (default) ──
 
 # Quick test (1K products)
 uv run python -m tt_model.pipeline --max-products 1000
@@ -191,6 +214,17 @@ uv run python -m tt_model.pipeline --stage baselines
 
 # Full run (352K products, ~3 hours first time; retrains are much faster with cached embeddings)
 uv run python -m tt_model.pipeline
+
+# ── MS MARCO ──
+
+# Quick test (10K passages)
+uv run python -m tt_model.pipeline --dataset msmarco --max-passages 10000
+
+# BM25 only
+uv run python -m tt_model.pipeline --dataset msmarco --stage bm25
+
+# Full run (500K passages)
+uv run python -m tt_model.pipeline --dataset msmarco
 
 # Reuse all six embedding blobs from GCS
 uv run python -m tt_model.pipeline \
@@ -271,7 +305,15 @@ BM25 sparse deploys are resumable. The uploader retries `429 ResourceExhausted` 
 - `google-cloud-vectorsearch` — Vector Search 2.0
 - `jax[cpu]`, `flax`, `optax` — Two-tower model training
 - `fastapi`, `uvicorn`, `jinja2` — Web app
-- `datasets` — Amazon ESCI dataset loading
+- `datasets` — Amazon ESCI and MS MARCO dataset loading
 - `umap-learn` — UMAP dimensionality reduction for embedding visualization
 - `hdbscan` — Hierarchical clustering for zoom-level cluster labels
 - `numpy`, `tqdm` — Utilities
+
+## TODO (MS MARCO)
+
+- [ ] Run full MS MARCO pipeline: embeddings, training, evaluation (`uv run python -m tt_model.pipeline --dataset msmarco`)
+- [ ] Deploy MS MARCO VS2 collections (`--deploy-vs2` with `--dataset msmarco`)
+- [ ] Precompute MS MARCO UMAP coordinates and cluster labels (`--stage umap --dataset msmarco`)
+- [ ] Test web app dataset switcher with both datasets loaded simultaneously
+- [ ] Add MS MARCO offline results table to this README once training completes
