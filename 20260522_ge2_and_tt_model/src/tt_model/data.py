@@ -251,7 +251,7 @@ def load_msmarco(max_passages: int | None = 500_000):
     # Load corpus
     print("Loading corpus...")
     corpus_ds = load_dataset(
-        "BeIR/msmarco", "corpus", split="train",
+        "BeIR/msmarco", "corpus", split="corpus",
         verification_mode="no_checks",
     )
 
@@ -308,7 +308,7 @@ def load_msmarco(max_passages: int | None = 500_000):
     # Load queries
     print("Loading queries...")
     queries_ds = load_dataset(
-        "BeIR/msmarco", "queries", split="train",
+        "BeIR/msmarco", "queries", split="queries",
         verification_mode="no_checks",
     )
     all_query_texts = {}
