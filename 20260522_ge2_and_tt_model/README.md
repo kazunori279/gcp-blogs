@@ -96,23 +96,23 @@ On CPU, the two-tower training and validation loop usually takes tens of minutes
 
 ### Amazon ESCI (352K products, 3,134 test queries)
 
-| Metric | BM25 | Similarity | Retrieval | TT Similarity | TT Retrieval |
+| Metric | BM25 | Similarity (baseline) | Retrieval | TT Similarity | TT Retrieval |
 |--------|------|------------|-----------|---------------|--------------|
-| MRR@10 | 0.5738 | 0.6219 | 0.7372 | 0.7161 | **0.7442** |
-| NDCG@10 | 0.3299 | 0.4098 | 0.5175 | 0.4895 | **0.5182** |
-| Recall@10 | 0.2085 | 0.2704 | 0.3406 | 0.3246 | **0.3429** |
-| Recall@100 | 0.4702 | 0.6232 | 0.7492 | 0.7376 | **0.7576** |
+| MRR@10 | 0.5738 (−7.7%) | 0.6219 | 0.7372 (+18.5%) | 0.7161 (+15.1%) | **0.7442** (+19.7%) |
+| NDCG@10 | 0.3299 (−19.5%) | 0.4098 | 0.5175 (+26.3%) | 0.4895 (+19.4%) | **0.5182** (+26.4%) |
+| Recall@10 | 0.2085 (−22.9%) | 0.2704 | 0.3406 (+26.0%) | 0.3246 (+20.0%) | **0.3429** (+26.8%) |
+| Recall@100 | 0.4702 (−24.6%) | 0.6232 | 0.7492 (+20.2%) | 0.7376 (+18.4%) | **0.7576** (+21.6%) |
 
 BM25 here is a lightweight lexical baseline over raw product titles only. Even that simple sparse baseline is competitive enough to be worth keeping in the benchmark, but all embedding-based methods outperform it by a clear margin. `TT Retrieval` remains the strongest overall offline result in this repo and slightly outperforms the frozen retrieval baseline on all four metrics.
 
 ### MS MARCO (500K passages, 146 test queries)
 
-| Metric | BM25 | Similarity | Retrieval | TT Similarity | TT Retrieval |
+| Metric | BM25 | Similarity (baseline) | Retrieval | TT Similarity | TT Retrieval |
 |--------|------|------------|-----------|---------------|--------------|
-| MRR@10 | 0.1328 | 0.3801 | 0.4243 | 0.3836 | **0.3978** |
-| NDCG@10 | 0.1813 | 0.4634 | 0.5075 | 0.4770 | **0.4849** |
-| Recall@10 | 0.3425 | 0.7260 | **0.7740** | **0.7740** | 0.7671 |
-| Recall@100 | 0.6678 | **0.9589** | 0.9521 | 0.9726 | **0.9726** |
+| MRR@10 | 0.1328 (−65.1%) | 0.3801 | 0.4243 (+11.6%) | 0.3836 (+0.9%) | **0.3978** (+4.7%) |
+| NDCG@10 | 0.1813 (−60.9%) | 0.4634 | 0.5075 (+9.5%) | 0.4770 (+2.9%) | **0.4849** (+4.6%) |
+| Recall@10 | 0.3425 (−52.8%) | 0.7260 | **0.7740** (+6.6%) | **0.7740** (+6.6%) | 0.7671 (+5.7%) |
+| Recall@100 | 0.6678 (−30.3%) | **0.9589** | 0.9521 (−0.7%) | 0.9726 (+1.4%) | **0.9726** (+1.4%) |
 
 The MS MARCO test split has only 146 queries, making test metrics noisier than ESCI. On the larger validation split (3,620 queries), the two-tower models show clearer improvements over the frozen baselines:
 
