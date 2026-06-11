@@ -715,3 +715,7 @@ def main():
         reuse_checkpoints=args.reuse_checkpoints,
         dataset_name=args.dataset,
     )
+
+
+if __name__ == "__main__":
+    main()

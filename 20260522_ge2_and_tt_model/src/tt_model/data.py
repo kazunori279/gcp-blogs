@@ -348,8 +348,13 @@ def load_dataset_by_config(
     config: DatasetConfig,
     max_docs: int | None = None,
 ):
+    kwargs = {}
     if config.name == "esci":
-        return load_esci(max_products=max_docs)
+        if max_docs is not None:
+            kwargs["max_products"] = max_docs
+        return load_esci(**kwargs)
     elif config.name == "msmarco":
-        return load_msmarco(max_passages=max_docs)
+        if max_docs is not None:
+            kwargs["max_passages"] = max_docs
+        return load_msmarco(**kwargs)
     raise ValueError(f"Unknown dataset: {config.name}")
