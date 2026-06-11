@@ -72,6 +72,11 @@ Only E and S labels are treated as positive pairs for training and evaluation. C
 
 The loader takes a configurable subset of the 8.84M passage corpus (default 500K), prioritizing passages that appear in the qrels so that the subset retains maximum query coverage. Queries are filtered to those with at least one relevant passage in the subset.
 
+| Split | Queries | Passages | Pairs |
+|-------|---------|----------|-------|
+| Train | 36,196 | 500,000 | 38,045 |
+| Test | 146 | 500,000 | 150 |
+
 ## Training
 
 - **Base embeddings**: Gemini Embedding 2, 768 dimensions
@@ -82,13 +87,14 @@ The loader takes a configurable subset of the 8.84M passage corpus (default 500K
 - **Epoch budget**: Up to 30 epochs with early stopping
 - **Checkpoint selection**: Best validation `MRR@10` checkpoint, patience 4, `min_delta=0.001`
 - **Temperature**: 0.05
-- **Train pairs per run**: 251,353 aligned query-product positives after the validation split
-- **Validation pairs per run**: 28,288 query-product positives
-- **Total positive train pairs in dataset**: 279,641
+- **ESCI train pairs**: 251,353 aligned query-product positives (28,288 validation)
+- **MS MARCO train pairs**: 34,226 aligned query-passage positives (3,819 validation)
 
 On CPU, the two-tower training and validation loop usually takes tens of minutes once embeddings are already cached. The much longer first full run is dominated by embedding generation and upload, not by model fitting itself.
 
-## Results (352K products, 3,134 test queries)
+## Results
+
+### Amazon ESCI (352K products, 3,134 test queries)
 
 | Metric | BM25 | Similarity | Retrieval | TT Similarity | TT Retrieval |
 |--------|------|------------|-----------|---------------|--------------|
@@ -98,6 +104,26 @@ On CPU, the two-tower training and validation loop usually takes tens of minutes
 | Recall@100 | 0.4702 | 0.6232 | 0.7492 | 0.7376 | **0.7576** |
 
 BM25 here is a lightweight lexical baseline over raw product titles only. Even that simple sparse baseline is competitive enough to be worth keeping in the benchmark, but all embedding-based methods outperform it by a clear margin. `TT Retrieval` remains the strongest overall offline result in this repo and slightly outperforms the frozen retrieval baseline on all four metrics.
+
+### MS MARCO (500K passages, 146 test queries)
+
+| Metric | BM25 | Similarity | Retrieval | TT Similarity | TT Retrieval |
+|--------|------|------------|-----------|---------------|--------------|
+| MRR@10 | 0.1328 | 0.3801 | 0.4243 | 0.3836 | **0.3978** |
+| NDCG@10 | 0.1813 | 0.4634 | 0.5075 | 0.4770 | **0.4849** |
+| Recall@10 | 0.3425 | 0.7260 | **0.7740** | **0.7740** | 0.7671 |
+| Recall@100 | 0.6678 | **0.9589** | 0.9521 | 0.9726 | **0.9726** |
+
+The MS MARCO test split has only 146 queries, making test metrics noisier than ESCI. On the larger validation split (3,620 queries), the two-tower models show clearer improvements over the frozen baselines:
+
+| Metric | TT Similarity (val) | TT Retrieval (val) |
+|--------|--------------------|--------------------|
+| MRR@10 | 0.4321 | **0.4604** |
+| NDCG@10 | 0.5178 | **0.5446** |
+| Recall@10 | 0.8024 | **0.8244** |
+| Recall@100 | 0.9801 | **0.9850** |
+
+The same overall pattern holds across both datasets: Retrieval embeddings outperform Similarity, and two-tower learned projections improve over frozen baselines. BM25 is notably weaker on MS MARCO than ESCI — passage text is longer and more varied than product titles, making lexical matching less effective. The embedding-based methods achieve near-perfect Recall@100 (>0.95), indicating the 500K-passage subset retains excellent coverage of the query-relevant passages.
 
 ### Vector Search 2.0 deployment
 
@@ -312,8 +338,8 @@ BM25 sparse deploys are resumable. The uploader retries `429 ResourceExhausted` 
 
 ## TODO (MS MARCO)
 
-- [ ] Run full MS MARCO pipeline: embeddings, training, evaluation (`uv run python -m tt_model.pipeline --dataset msmarco`)
+- [x] Run full MS MARCO pipeline: embeddings, training, evaluation (`uv run python -m tt_model.pipeline --dataset msmarco`)
+- [x] Add MS MARCO offline results table to this README
 - [ ] Deploy MS MARCO VS2 collections (`--deploy-vs2` with `--dataset msmarco`)
-- [ ] Precompute MS MARCO UMAP coordinates and cluster labels (`--stage umap --dataset msmarco`)
+- [x] Precompute MS MARCO UMAP coordinates and cluster labels (`--stage umap --dataset msmarco`)
 - [ ] Test web app dataset switcher with both datasets loaded simultaneously
-- [ ] Add MS MARCO offline results table to this README once training completes
