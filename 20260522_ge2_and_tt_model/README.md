@@ -74,8 +74,8 @@ The loader takes a configurable subset of the 8.84M passage corpus (default 500K
 
 | Split | Queries | Passages | Pairs |
 |-------|---------|----------|-------|
-| Train | 36,196 | 500,000 | 38,045 |
-| Test | 146 | 500,000 | 150 |
+| Train | 31,342 | 500,000 | 32,959 |
+| Test | 5,000 | 500,000 | 5,236 |
 
 ## Training
 
@@ -88,7 +88,7 @@ The loader takes a configurable subset of the 8.84M passage corpus (default 500K
 - **Checkpoint selection**: Best validation `MRR@10` checkpoint, patience 4, `min_delta=0.001`
 - **Temperature**: 0.05
 - **ESCI train pairs**: 251,353 aligned query-product positives (28,288 validation)
-- **MS MARCO train pairs**: 34,226 aligned query-passage positives (3,819 validation)
+- **MS MARCO train pairs**: 29,644 aligned query-passage positives (3,315 validation)
 
 On CPU, the two-tower training and validation loop usually takes tens of minutes once embeddings are already cached. The much longer first full run is dominated by embedding generation and upload, not by model fitting itself.
 
@@ -105,25 +105,16 @@ On CPU, the two-tower training and validation loop usually takes tens of minutes
 
 BM25 here is a lightweight lexical baseline over raw product titles only. Even that simple sparse baseline is competitive enough to be worth keeping in the benchmark, but all embedding-based methods outperform it by a clear margin. `TT Retrieval` remains the strongest overall offline result in this repo and slightly outperforms the frozen retrieval baseline on all four metrics.
 
-### MS MARCO (500K passages, 146 test queries)
+### MS MARCO (500K passages, 5,000 test queries)
 
 | Metric | BM25 | Similarity (baseline) | Retrieval | TT Similarity | TT Retrieval |
 |--------|------|------------|-----------|---------------|--------------|
-| MRR@10 | 0.1328 (−65.1%) | 0.3801 | 0.4243 (+11.6%) | 0.3836 (+0.9%) | **0.3978** (+4.7%) |
-| NDCG@10 | 0.1813 (−60.9%) | 0.4634 | 0.5075 (+9.5%) | 0.4770 (+2.9%) | **0.4849** (+4.6%) |
-| Recall@10 | 0.3425 (−52.8%) | 0.7260 | **0.7740** (+6.6%) | **0.7740** (+6.6%) | 0.7671 (+5.7%) |
-| Recall@100 | 0.6678 (−30.3%) | **0.9589** | 0.9521 (−0.7%) | 0.9726 (+1.4%) | **0.9726** (+1.4%) |
+| MRR@10 | 0.2566 (−39.8%) | 0.4265 | 0.4578 (+7.3%) | 0.4352 (+2.0%) | **0.4645** (+8.9%) |
+| NDCG@10 | 0.3182 (−37.9%) | 0.5121 | 0.5430 (+6.0%) | 0.5227 (+2.1%) | **0.5500** (+7.4%) |
+| Recall@10 | 0.5267 (−33.6%) | 0.7926 | 0.8217 (+3.7%) | 0.8106 (+2.3%) | **0.8303** (+4.8%) |
+| Recall@100 | 0.7855 (−20.0%) | 0.9815 | 0.9852 (+0.4%) | 0.9837 (+0.2%) | **0.9873** (+0.6%) |
 
-The MS MARCO test split has only 146 queries, making test metrics noisier than ESCI. On the larger validation split (3,620 queries), the two-tower models show clearer improvements over the frozen baselines:
-
-| Metric | TT Similarity (val) | TT Retrieval (val) |
-|--------|--------------------|--------------------|
-| MRR@10 | 0.4321 | **0.4604** |
-| NDCG@10 | 0.5178 | **0.5446** |
-| Recall@10 | 0.8024 | **0.8244** |
-| Recall@100 | 0.9801 | **0.9850** |
-
-The same overall pattern holds across both datasets: Retrieval embeddings outperform Similarity, and two-tower learned projections improve over frozen baselines. BM25 is notably weaker on MS MARCO than ESCI — passage text is longer and more varied than product titles, making lexical matching less effective. The embedding-based methods achieve near-perfect Recall@100 (>0.95), indicating the 500K-passage subset retains excellent coverage of the query-relevant passages.
+The same overall pattern holds across both datasets: Retrieval embeddings outperform Similarity, and two-tower learned projections improve over frozen baselines. `TT Retrieval` is the strongest method on both datasets, with clear gains over the frozen retrieval baseline across all metrics. BM25 is notably weaker on MS MARCO than ESCI — passage text is longer and more varied than product titles, making lexical matching less effective. The embedding-based methods achieve near-perfect Recall@100 (>0.98), indicating the 500K-passage subset retains excellent coverage of the query-relevant passages.
 
 ### Vector Search 2.0 deployment
 

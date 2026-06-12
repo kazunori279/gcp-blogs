@@ -59,10 +59,13 @@ class VS2Manager:
             collection_id=collection_id,
             collection=collection,
         )
-        op = self.vs_client.create_collection(request=request)
         print(f"  Creating collection {collection_id}...")
-        op.result()
-        print(f"  Collection {collection_id} ready")
+        try:
+            op = self.vs_client.create_collection(request=request)
+            op.result()
+            print(f"  Collection {collection_id} ready")
+        except AlreadyExists:
+            print(f"  Collection {collection_id} already exists; reusing it")
 
     def create_sparse_collection(
         self, collection_id: str, vector_field: str = SPARSE_VECTOR_FIELD
@@ -156,7 +159,9 @@ class VS2Manager:
             request = vectorsearch_v1beta.BatchCreateDataObjectsRequest(
                 parent=collection_path, requests=batch
             )
-            self.data_client.batch_create_data_objects(request)
+            self._batch_create_with_retry(
+                request, f"batch {start // 250 + 1}"
+            )
 
     def create_index(self, collection_id: str, index_id: str = "ann-index"):
         request = vectorsearch_v1beta.CreateIndexRequest(
@@ -449,17 +454,18 @@ def deploy_and_evaluate(
     tt_similarity_op = vs2.create_index(c["twotower_similarity"])
     tt_retrieval_op = vs2.create_index(c["twotower_retrieval"])
 
-    print("\n  Waiting for indexes to build (this may take ~30 minutes)...")
-    bm25_op.result()
-    print("  BM25 sparse index ready")
-    sim_op.result()
-    print("  Similarity index ready")
-    baseline_op.result()
-    print("  Baseline index ready")
-    tt_similarity_op.result()
-    print("  Similarity two-tower index ready")
-    tt_retrieval_op.result()
-    print("  Retrieval two-tower index ready")
+    print("\n  Waiting for indexes to build (this may take ~60 minutes)...", flush=True)
+    index_timeout = 3600
+    bm25_op.result(timeout=index_timeout)
+    print("  BM25 sparse index ready", flush=True)
+    sim_op.result(timeout=index_timeout)
+    print("  Similarity index ready", flush=True)
+    baseline_op.result(timeout=index_timeout)
+    print("  Baseline index ready", flush=True)
+    tt_similarity_op.result(timeout=index_timeout)
+    print("  Similarity two-tower index ready", flush=True)
+    tt_retrieval_op.result(timeout=index_timeout)
+    print("  Retrieval two-tower index ready", flush=True)
 
     all_metrics = {}
 

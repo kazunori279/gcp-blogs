@@ -236,12 +236,13 @@ def split_train_validation_queries(
     return fit_queries, fit_qrels, val_queries, val_qrels
 
 
-def load_msmarco(max_passages: int | None = 500_000):
+def load_msmarco(max_passages: int | None = 500_000, test_size: int = 5_000):
     """Load MS MARCO passage ranking dataset from BeIR format.
 
     Uses BeIR/msmarco for corpus+queries and BeIR/msmarco-qrels for
     relevance judgments. Binary relevance: 1=relevant, 0=not relevant.
-    Train/test split comes from the dataset itself (train vs validation).
+    Pools queries from both BeIR train and validation splits, then
+    re-splits into train/test with `test_size` test queries.
 
     Returns same 5-tuple shape as load_esci:
         passages, train_queries, train_qrels, test_queries, test_qrels
@@ -318,10 +319,10 @@ def load_msmarco(max_passages: int | None = 500_000):
         if text:
             all_query_texts[qid] = text
 
-    # Build qrels from train and test splits, filtering to our passage subset
-    def _build_qrels(qrels_ds, label="split"):
-        queries = {}
-        qrels = {}
+    # Build qrels from both splits, filtering to our passage subset
+    all_queries = {}
+    all_qrels = {}
+    for qrels_ds in [train_qrels_ds, test_qrels_ds]:
         for row in qrels_ds:
             score = row["score"]
             if score <= 0:
@@ -332,14 +333,27 @@ def load_msmarco(max_passages: int | None = 500_000):
                 continue
             if qid not in all_query_texts:
                 continue
-            queries[qid] = all_query_texts[qid]
-            qrels.setdefault(qid, {})[pid] = score
-        pairs = sum(len(v) for v in qrels.values())
-        print(f"  {label}: {len(queries)} queries ({pairs} pairs)")
-        return queries, qrels
+            all_queries[qid] = all_query_texts[qid]
+            all_qrels.setdefault(qid, {})[pid] = score
 
-    train_queries, train_qrels = _build_qrels(train_qrels_ds, "Train")
-    test_queries, test_qrels = _build_qrels(test_qrels_ds, "Test")
+    # Split into train/test
+    rng = np.random.default_rng(42)
+    all_qids = list(all_qrels.keys())
+    rng.shuffle(all_qids)
+    split_idx = len(all_qids) - test_size
+
+    train_qids = set(all_qids[:split_idx])
+    test_qids = set(all_qids[split_idx:])
+
+    train_queries = {qid: all_queries[qid] for qid in all_qids if qid in train_qids}
+    train_qrels = {qid: all_qrels[qid] for qid in all_qids if qid in train_qids}
+    test_queries = {qid: all_queries[qid] for qid in all_qids if qid in test_qids}
+    test_qrels = {qid: all_qrels[qid] for qid in all_qids if qid in test_qids}
+
+    train_pairs = sum(len(v) for v in train_qrels.values())
+    test_pairs = sum(len(v) for v in test_qrels.values())
+    print(f"  Train: {len(train_queries)} queries ({train_pairs} pairs)")
+    print(f"  Test: {len(test_queries)} queries ({test_pairs} pairs)")
 
     return passages, train_queries, train_qrels, test_queries, test_qrels
 
